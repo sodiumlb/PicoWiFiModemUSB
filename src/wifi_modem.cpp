@@ -40,10 +40,12 @@
 #include "lwip/tcp.h"
 #include "lwip/dns.h"
 
+#include "tusb.h"
 
 #include "wifi_modem.h"
 #include "globals.h"
-#include "eeprom.h"
+//#include "eeprom.h"
+#include "lfs.h"
 #include "tcp_support.h"
 #include "support.h"
 #include "at_basic.h"
@@ -56,20 +58,20 @@ void setup(void) {
 
    stdio_init_all();
 
-   gpio_init(DTR);
-   gpio_set_dir(DTR, INPUT);
+   //gpio_init(DTR);
+   //gpio_set_dir(DTR, INPUT);
 
-   gpio_init(RI);
-   gpio_set_dir(RI, OUTPUT);
-   gpio_put(RI, !ACTIVE);           // not ringing
+   //gpio_init(RI);
+   //gpio_set_dir(RI, OUTPUT);
+   //gpio_put(RI, !ACTIVE);           // not ringing
 
-   gpio_init(DCD);
-   gpio_set_dir(DCD, OUTPUT);
-   gpio_put(DCD, !ACTIVE);          // not connected
+   //gpio_init(DCD);
+   //gpio_set_dir(DCD, OUTPUT);
+   //gpio_put(DCD, !ACTIVE);          // not connected
 
-   gpio_init(DSR);
-   gpio_set_dir(DSR, OUTPUT);
-   gpio_put(DSR, !ACTIVE);          // modem is not ready
+   //gpio_init(DSR);
+   //gpio_set_dir(DSR, OUTPUT);
+   //gpio_put(DSR, !ACTIVE);          // modem is not ready
 #ifndef NDEBUG
    gpio_init(POLL_STATE_LED);
    gpio_set_dir(POLL_STATE_LED, OUTPUT);
@@ -83,7 +85,11 @@ void setup(void) {
    gpio_set_dir(TXBUFF_OVFL, OUTPUT);
    gpio_put(TXBUFF_OVFL, LOW);
 #endif
-   initEEPROM();
+
+   tud_init(TUD_OPT_RHPORT);
+
+   //initEEPROM();
+   initLFS();
    readSettings(&settings);
 
    if( settings.magicNumber != MAGIC_NUMBER ) {
@@ -158,6 +164,8 @@ void setup(void) {
 
 // =============================================================
 void loop(void) {
+
+   tud_task();
 
    checkForIncomingCall();
 
