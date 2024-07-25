@@ -164,8 +164,8 @@ char *doSpeedChange(char *atCmd) {
                case 76800L:
                case 115200L:
                   sendResult(R_OK);
-                  uart_tx_wait_blocking(uart0);  // wait for transmit to finish
-                  uart_set_baudrate(uart0, newSerialSpeed);
+                  ser_tx_wait_blocking(ser0);  // wait for transmit to finish
+                  ser_set_baudrate(ser0, newSerialSpeed);
                   settings.serialSpeed = newSerialSpeed;
                   break;
 
@@ -258,16 +258,16 @@ char *doDataConfig(char *atCmd) {
          printf("%u", settings.dataBits);
          switch( settings.parity ) {
             case UART_PARITY_NONE:
-               uart_putc(uart0, 'N');
+               ser_putc(ser0, 'N');
                break;
             case UART_PARITY_ODD:
-               uart_putc(uart0, 'O');
+               ser_putc(ser0, 'O');
                break;
             case UART_PARITY_EVEN:
-               uart_putc(uart0, 'E');
+               ser_putc(ser0, 'E');
                break;
             default:
-               uart_putc(uart0, '?');
+               ser_putc(ser0, '?');
                break;
          }
          printf("%u\r\n", settings.stopBits);

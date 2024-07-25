@@ -42,6 +42,7 @@
 
 #include "tusb.h"
 
+#include "ser_hal.h"
 #include "wifi_modem.h"
 #include "globals.h"
 //#include "eeprom.h"
@@ -98,9 +99,9 @@ void setup(void) {
    }
    sessionTelnetType = settings.telnet;
 
-   uart_set_baudrate(uart0, settings.serialSpeed);
-   uart_set_format(uart0, settings.dataBits, settings.stopBits, settings.parity);
-   uart_set_translate_crlf(uart0, false);
+   ser_set_baudrate(ser0, settings.serialSpeed);
+   ser_set_format(ser0, settings.dataBits, settings.stopBits, (ser_parity_t)settings.parity);
+   ser_set_translate_crlf(ser0, false);
    setHardwareFlow(settings.rtsCts);
 
    // enable interrupt when DTR goes inactive if we're not ignoring it
@@ -108,8 +109,8 @@ void setup(void) {
 
    if( settings.startupWait ) {
       while( true ) {            // wait for a CR
-         if( uart_is_readable(uart0) ) {
-            if( uart_getc(uart0) == CR ) {
+         if( ser_is_readable(ser0) ) {
+            if( ser_getc(ser0) == CR ) {
                break;
             }
          }
@@ -144,7 +145,7 @@ void setup(void) {
 
    if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP || !settings.ssid[0] ) {
       if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ) {
-         gpio_put(DSR, ACTIVE);  // modem is finally ready or SSID not configured
+         ser_set(DSR, ACTIVE);  // modem is finally ready or SSID not configured
          dns_init();
       }
       if( settings.autoExecute[0] ) {
@@ -196,15 +197,15 @@ void loop(void) {
          break;
 
       case ONLINE:
-         if( uart_is_readable(uart0) ) {       // data from RS-232 to Wifi
+         if( ser_is_readable(ser0) ) {       // data from RS-232 to Wifi
             sendSerialData();
          }
 
-         while( tcpBytesAvailable(tcpClient) && !uart_is_readable(uart0) ) { 
+         while( tcpBytesAvailable(tcpClient) && !ser_is_readable(ser0) ) { 
             // data from WiFi to RS-232
             int c = receiveTcpData();
             if( c != -1 ) {
-               uart_putc_raw(uart0, (char)c);
+               ser_putc_raw(ser0, (char)c);
             }
          }
 

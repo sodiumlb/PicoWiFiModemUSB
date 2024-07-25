@@ -1,7 +1,7 @@
 void doAtCmds(char *atCmd);             // forward delcaration
 
 void crlf(void) {
-   uart_puts(uart0, "\r\n");
+   ser_puts(ser0, "\r\n");
 }
 
 uint32_t getTotalHeap(void) {
@@ -48,8 +48,8 @@ void inAtCommandMode() {
    char c;
 
    // get AT command
-   if( uart_is_readable(uart0) ) {
-      c = uart_getc(uart0);
+   if( ser_is_readable(ser0) ) {
+      c = ser_getc(ser0);
 
       if( c == LF || c == CR ) {       // command finished?
          if( settings.echo ) {
@@ -78,7 +78,7 @@ void inAtCommandMode() {
             atCmd[atCmdLen] = NUL;
          }
          if( settings.echo ) {
-            uart_putc(uart0, c);
+            ser_putc(ser0, c);
          }
       }
    }
@@ -92,13 +92,13 @@ void sendSerialData() {
    // in telnet mode, we might have to escape every single char,
    // so don't use more than half the buffer
    size_t maxBufSize = (sessionTelnetType != NO_TELNET) ? TX_BUF_SIZE / 2 : TX_BUF_SIZE;
-   size_t len = uart_is_readable(uart0);
+   size_t len = ser_is_readable(ser0);
    if( len > maxBufSize) {
       len = maxBufSize;
    }
    uint8_t *p = txBuf;
    for( size_t i = 0; i < len; ++i ) {
-      *p++ = uart_getc(uart0);
+      *p++ = ser_getc(ser0);
    }
 
    uint32_t serialInterval = millis() - lastSerialData;
@@ -171,9 +171,9 @@ int receiveTcpData() {
       if( rxByte == DM ) { // ignore data marks
          rxByte = -1;
       } else if( rxByte == BRK ) { // break?
-         uart_set_break(uart0, true);
+         ser_set_break(ser0, true);
          sleep_ms(300);
-         uart_set_break(uart0, false);
+         ser_set_break(ser0, false);
          rxByte = -1;
       } else if( rxByte == AYT ) { // are you there?
 #ifndef NDEBUG
@@ -376,34 +376,34 @@ void sendResult(int resultCode) {
          switch( resultCode ) {        // possible extra info for CONNECT and
                                        // NO CARRIER if extended codes are
             case R_CONNECT:            // enabled
-               uart_puts(uart0, connectStr);
+               ser_puts(ser0, connectStr);
                if( settings.extendedCodes ) {
                   printf(" %lu", settings.serialSpeed);
                }
                break;
 
             case R_NO_CARRIER:
-               uart_puts(uart0, noCarrierStr);
+               ser_puts(ser0, noCarrierStr);
                if( settings.extendedCodes ) {
                   printf(" (%s)", connectTimeString());
                }
                break;
 
             case R_ERROR:
-               uart_puts(uart0, errorStr);
+               ser_puts(ser0, errorStr);
                lastCmd[0] = NUL;
                memset(atCmd, 0, sizeof atCmd);
                break;
 
             case R_RING_IP:
-               uart_puts(uart0, ringStr);
+               ser_puts(ser0, ringStr);
                if( settings.extendedCodes ) {
                   printf(" %s", ip4addr_ntoa(&tcpClient->pcb->remote_ip));
                }
                break;
 
             default:
-               uart_puts(uart0, resultCodes[resultCode]);
+               ser_puts(ser0, resultCodes[resultCode]);
                break;
          }
          crlf();
@@ -425,7 +425,7 @@ void endCall() {
    tcpClientClose(tcpClient);
    tcpClient = NULL;
    sendResult(R_NO_CARRIER);
-   gpio_put(DCD, !ACTIVE);
+   ser_set(DCD, !ACTIVE);
    connectTime = 0;
    escCount = 0;
 }
@@ -444,7 +444,7 @@ void endCall() {
 void checkForIncomingCall() {
    if( settings.listenPort && serverHasClient(&tcpServer) ) {
       if( state != CMD_NOT_IN_CALL || (!settings.autoAnswer && ringCount > MAGIC_ANSWER_RINGS) ) {
-         gpio_put(RI, !ACTIVE);
+         ser_set(RI, !ACTIVE);
          TCP_CLIENT_T *droppedClient = serverGetClient(&tcpServer, &tcpDroppedClient);
          if( settings.busyMsg[0] ) {
             tcpWriteStr(droppedClient, settings.busyMsg);
@@ -462,17 +462,17 @@ void checkForIncomingCall() {
          if( !ringing ) {
             ringing = true;            // start ringing
             ringCount = 1;
-            gpio_put(RI, ACTIVE);
+            ser_set(RI, ACTIVE);
             if( !settings.autoAnswer || ringCount < settings.autoAnswer ) {
                sendResult(R_RING);     // only show RING if we're not just
             }                          // about to answer
             nextRingMs = millis() + RING_INTERVAL;
          } else if( millis() > nextRingMs ) {
-            if( gpio_get(RI) == ACTIVE ) {
-               gpio_put(RI, !ACTIVE);
+            if( ser_get(RI) == ACTIVE ) {
+               ser_set(RI, !ACTIVE);
             } else {
                ++ringCount;
-               gpio_put(RI, ACTIVE);
+               ser_set(RI, ACTIVE);
                if( !settings.autoAnswer || ringCount < settings.autoAnswer ) {
                   sendResult(R_RING);
                }
@@ -480,14 +480,14 @@ void checkForIncomingCall() {
             nextRingMs = millis() + RING_INTERVAL;
          }
       } else if( settings.autoAnswer && ringCount >= settings.autoAnswer ) {
-         gpio_put(RI, !ACTIVE);
+         ser_set(RI, !ACTIVE);
          tcpClient = serverGetClient(&tcpServer, &tcpClient0);
          if( settings.telnet != NO_TELNET ) {
             // send incantation to switch from line mode to character mode
             bytesOut += tcpWriteBuf(tcpClient, toCharModeMagic, sizeof toCharModeMagic);
          }
          sendResult(R_RING_IP);
-         gpio_put(DCD, ACTIVE);
+         ser_set(DCD, ACTIVE);
          if( settings.serverPassword[0]) {
             tcpWriteStr(tcpClient, "\r\r\nPassword: ");
             state = PASSWORD;
@@ -504,7 +504,7 @@ void checkForIncomingCall() {
          connectTime = millis();
       }
    } else if( ringing ) {
-      gpio_put(RI, !ACTIVE);
+      ser_set(RI, !ACTIVE);
       ringing = false;
       ringCount = 0;
    }
@@ -519,13 +519,13 @@ void setupOTAupdates() {
 
    ArduinoOTA.onStart([]() {
       printf("OTA upload start\r\n");
-      gpio_put(DSR, !ACTIVE);
+      ser_set(DSR, !ACTIVE);
    });
 
    ArduinoOTA.onEnd([]() {
       printf("OTA upload end - programming\r\n"));
-      uart_tx_wait_blocking(uart0); // allow serial output to finish
-      gpio_put(TXEN, HIGH);         // before disabling the TX output
+      ser_tx_wait_blocking(ser0); // allow serial output to finish
+      ser_set(TXEN, HIGH);         // before disabling the TX output
    });
 
    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -568,6 +568,7 @@ void setupOTAupdates() {
 #endif
 
 void setHardwareFlow(bool state) {
+   /*
    if( state ) {
       gpio_set_function(CTS, GPIO_FUNC_UART);
       gpio_set_function(RTS, GPIO_FUNC_UART);
@@ -578,7 +579,8 @@ void setHardwareFlow(bool state) {
       gpio_put(CTS, ACTIVE);
       gpio_set_dir(RTS, INPUT);
    }
-   uart_set_hw_flow(uart0, state, state);
+   */
+   ser_set_hw_flow(ser0, state, state);
 
 
 }
@@ -773,8 +775,8 @@ static bool PagedOut(const char *str, bool reset=false) {
    }
    if( numLines >= settings.height-1 ) {
       printf("[More]");
-      while( !uart_is_readable(uart0) );
-      c = uart_getc(uart0);
+      while( !ser_is_readable(ser0) );
+      c = ser_getc(ser0);
       printf("\r      \r");
       numLines = 0;
    }

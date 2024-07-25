@@ -3,7 +3,7 @@
 //
 char *answerCall(char *atCmd) {
    tcpClient = serverGetClient(&tcpServer, &tcpClient0);
-   gpio_put(RI, !ACTIVE); // we've picked up so ringing stops
+   ser_set(RI, !ACTIVE); // we've picked up so ringing stops
    ringing = false;
    ringCount = 0;
    if( settings.telnet != NO_TELNET ) {
@@ -15,10 +15,10 @@ char *answerCall(char *atCmd) {
    connectTime = millis();
    dtrWentInactive = false;
    sendResult(R_CONNECT);
-   gpio_put(DCD, ACTIVE); // we've got a carrier signal
+   ser_set(DCD, ACTIVE); // we've got a carrier signal
    amClient = false;
    state = ONLINE;
-   uart_tx_wait_blocking(uart0); // drain the UART's Tx FIFO
+   ser_tx_wait_blocking(ser0); // drain the UART's Tx FIFO
    return atCmd;
 }
 
@@ -43,7 +43,7 @@ char *wifiConnection(char *atCmd) {
          if( !atCmd[0] ) {
             sendResult(R_OK);
          }
-         gpio_put(DSR, !ACTIVE);  // modem is not ready
+         ser_set(DSR, !ACTIVE);  // modem is not ready
          break;
       case '1':
          ++atCmd;
@@ -55,7 +55,7 @@ char *wifiConnection(char *atCmd) {
             for( int i = 0; i < 50; ++i ) {
                sleep_ms(500);
                if( !settings.quiet && settings.extendedCodes ) {
-                  uart_putc(uart0, '.');
+                  ser_putc(ser0, '.');
                }
                if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ) {
                   break;
@@ -67,7 +67,7 @@ char *wifiConnection(char *atCmd) {
             if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP ) {
                sendResult(R_ERROR);
             } else {
-               gpio_put(DSR, ACTIVE);  // modem is ready
+               ser_set(DSR, ACTIVE);  // modem is ready
                dns_init();
                if( !settings.quiet && settings.extendedCodes ) {
                   printf("CONNECTED TO %s IP ADDRESS: %s\r\n",
@@ -170,25 +170,25 @@ char *dialNumber(char *atCmd) {
 
    if( !settings.quiet && settings.extendedCodes ) {
       printf("DIALLING %s:%u\r\n", host, portNum);
-      uart_tx_wait_blocking(uart0);
+      ser_tx_wait_blocking(ser0);
    }
    sleep_ms(2000);   // delay for ZMP to be able to detect CONNECT
-   if( !uart_is_readable(uart0) ) {
+   if( !ser_is_readable(ser0) ) {
       tcpClient = tcpConnect( &tcpClient0, host, portNum);
       if( tcpClient ) {
          connectTime = millis();
          dtrWentInactive = false;
          sendResult(R_CONNECT);
-         gpio_put(DCD, ACTIVE);
+         ser_set(DCD, ACTIVE);
          state = ONLINE;
          amClient = true;
       } else {
          sendResult(R_NO_CARRIER);
-         gpio_put(DCD, !ACTIVE);
+         ser_set(DCD, !ACTIVE);
       }
    } else {
       sendResult(R_NO_CARRIER);
-      gpio_put(DCD, !ACTIVE);
+      ser_set(DCD, !ACTIVE);
    }
    atCmd[0] = NUL;
    return atCmd;
@@ -264,12 +264,12 @@ char *httpGet(char *atCmd) {
    tcpClient = tcpConnect(&tcpClient0, host, portNum);
    if( !tcpClient ) {
       sendResult(R_NO_CARRIER);
-      gpio_put(DCD, !ACTIVE);
+      ser_set(DCD, !ACTIVE);
    } else {
       connectTime = millis();
       dtrWentInactive = false;
       sendResult(R_CONNECT);
-      gpio_put(DCD, ACTIVE);
+      ser_set(DCD, ACTIVE);
       amClient = true;
       state = ONLINE;
 
@@ -591,7 +591,7 @@ char *doDateTime(char *atCmd) {
       char result[80], *ptr;
       tcpClient = tcpConnect(&tcpClient0, NIST_HOST, NIST_PORT);
       if( tcpClient ) {
-         gpio_put(DCD, ACTIVE);
+         ser_set(DCD, ACTIVE);
          // read date/time from NIST
          result[0] = tcpReadByte(tcpClient, 1000);
          if( result[0] == '\n' ) {  // leading LF
@@ -613,7 +613,7 @@ char *doDateTime(char *atCmd) {
             }
          }
          tcpClientClose(tcpClient);
-         gpio_put(DCD, !ACTIVE);
+         ser_set(DCD, !ACTIVE);
       }
    }
    if( ok ) {
@@ -764,7 +764,7 @@ char *doExtended(char *atCmd) {
 // ATZ restart the sketch
 //
 char *resetToNvram(char *atCmd) {
-   uart_tx_wait_blocking(uart0);   // allow for CR/LF to finish
+   ser_tx_wait_blocking(ser0);   // allow for CR/LF to finish
    watchdog_enable(1, false);
    while( true ) {
       tight_loop_contents();
