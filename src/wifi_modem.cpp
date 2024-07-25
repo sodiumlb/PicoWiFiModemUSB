@@ -41,6 +41,7 @@
 #include "lwip/dns.h"
 
 #include "tusb.h"
+#include "usb_cdc.h"
 
 #include "ser_hal.h"
 #include "wifi_modem.h"
@@ -88,6 +89,7 @@ void setup(void) {
 #endif
 
    tud_init(TUD_OPT_RHPORT);
+   cdc_init();
 
    //initEEPROM();
    initLFS();
@@ -163,10 +165,21 @@ void setup(void) {
    }
 }
 
+// Invoked when device is mounted
+void tud_mount_cb(void) {
+  //blink_interval_ms = BLINK_MOUNTED;
+}
+
+// Invoked when device is unmounted
+void tud_umount_cb(void) {
+  //blink_interval_ms = BLINK_NOT_MOUNTED;
+}
+
 // =============================================================
 void loop(void) {
 
    tud_task();
+   cdc_task();
 
    checkForIncomingCall();
 

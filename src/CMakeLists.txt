@@ -30,6 +30,9 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}
       ${PROJECT_NAME}.cpp
+      #ser_uart.c
+      ser_cdc.c
+      usb_cdc.c
       lfs.c
       usb_descriptors.c
       littlefs/lfs.c
@@ -40,6 +43,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
       LFS_NO_MALLOC=1
       LFS_NAME_MAX=64
       PICO_FLASH_SIZE_BYTES=2097152
+      #PICO_STDIO_ENABLE_CRLF_SUPPORT
       )
 target_include_directories(${PROJECT_NAME} PRIVATE
       ${CMAKE_CURRENT_LIST_DIR}/tinyusb/src
