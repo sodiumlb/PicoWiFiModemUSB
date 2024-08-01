@@ -1,116 +1,19 @@
-# Pico WiFi modem
+# Pico WiFi USB modem
 
-## A Pico W based RS232 \<-\> WiFi modem with Hayes AT style commands and LED indicators
+## A Pico W based USB CDC \<-\> WiFi modem with Hayes AT style commands and a LED indicator
 
-| ![Front Panel](images/Front%20panel.jpg "Front Panel") |
-|:--:|
-| The Pico WiFi modem |
+This project is based on the great [Pico WiFi modem](https://github.com/mecparts/PicoWiFiModem), 
+but substitutes the RS232 side with a native USB CBC device and doesn't require additional or 
+custom hardware to operate - a bare RaspberryPi Pico W is enough.
 
-This project began as an exercise to learn about the Pico W and lwIP.
-Then, as I figured things out, it sort of took on a life of its own...
+The motivation for this is to add modem style network functionality to simple USB based systems.
+In particular the project aims to work well with [LOCI](https://github.com/sodiumlb/loci-hardware)
+for Oric 8-bit computers.
 
-The code was ported from my 
-[Retro WiFi Modem](https://github.com/mecparts/RetroWiFiModem). 
-One look at it will betray its Arduino IDE origin! It's definitely not
-the most efficient way to do things in the Pico world, but it worked
-well enough for my purposes in learning "okay, I know what I want to do
-here, but how does the Pico C/C++ SDK do it?"
-
-It likely would have been much faster to install one of the Pico-Arduino
-cores. I imagine there would have been far fewer code changes. But I
-don't think I would have learned anywhere near as much about the
-workings of the Pico W and lwIP as I did by using the Pico SDK.
-
-## The Hardware
-
-| ![Prototype](images/Prototype.jpg "Prototype") |
-|:--:|
-| The prototype |
-
-As with the code, I re-up'd a lot of the original hardware decisions.
-But, since this time around it wasn't a pandemic project that I was 
-trying to do as much as possible with parts on hand, I used a MAX3237
-instead of a MAX3232.
-
-| ![Interior](images/Interior.jpg "Interior") |
-|:--:|
 | The interior |
 
-The modem still uses the classic Hayes style blinking LEDs and a DE-9F
-for the RS-232 connector. Everything is displayed: RTS, CTS, DSR, DTR,
-DCD, RI, TxD and RxD. And this time, since I used a MAX3237, they're all
-brought out to the DE-9F connector. So things like using a change in the
-DTR line to go to command mode or end a call are supported (on a system
-that brings DTR out to the serial port, of course).
-
-Since the Pico W doesn't have EEPROM on board, I added a small 4K I2C
-EEPROM to the mix. I could have used a block of the Pico's flash, but I
-wanted to get a feel for I2C on the Pico as well.
-
-The Pico is socketed on this first board due to the lack of OTA
-programming. The PCB is set up to allow it to be soldered directly on
-the board once I have that figured out.
-
-| ![Back Panel](images/Back%20panel.jpg "Back Panel") |
-|:--:|
-| The back panel |
-
-The power connector expects a 2.1mm I.D. x 5.5mm O.D. barrel plug,
-delivering 5 volts, centre positive.  I used a Tri-Mag L6R06H-050 (5V,
-1.2A), [DigiKey part# 364-1251-ND](https://www.digikey.com/product-detail/en/tri-mag-llc/L6R06H-050/364-1251-ND/7682614).
-If you plug in a 9V adapter like you'd use for an Arduino, you *will*
-let the magic smoke out and have an ex-modem on your hands.
-
-| ![Schematic](images/PicoWifiModem.sch.png "Schematic") |
-|:--:|
-| The schematic |
-
-On the off chance that there's someone else out there with a well
-stocked parts box and a burning desire to put together their own Pico
-WiFi modem, there's a [BOM](kicad/Pico_WiFi_Modem-bom.csv) in the
-kicad sub directory. As was true with the original ESP8266 design, if
-you actually had to go out and buy all the parts, it really wouldn't be
-cost effective.
-
-## The case
-
-I re-used the same case, a Hammond 1593N case (DigiKey part #
-[HM963-ND](https://www.digikey.com/en/products/detail/hammond-manufacturing/1593NBK/1090774)
-or [HM964-ND](https://www.digikey.com/en/products/detail/hammond-manufacturing/1593NGY/1090775)
-depending on whether you like black or grey). STL and OpenSCAD
-files are included for the front and back panels. You could use the
-proper Hammond red panel for the front (DigiKey part #
-[HM965-ND](https://www.digikey.com/en/products/detail/hammond-manufacturing/1593NIR10/1090776)),
-*but* they're only available in 10 packs and their price is highway robbery.
-I ended up using a slightly smaller red panel (DigiKey part #
-[HM889-ND](https://www.digikey.com/en/products/detail/hammond-manufacturing/1593SIR10/409899))
-that was ~much~ cheaper (it has recently increased in price by 500%)
-and available in single units.
-
-The labels are unbelievably low tech. I print them on a piece of inkjet
-transparency film. I then cut that down to size so that it will fit
-under the LED opening. Then I attach the trimmed down transparency piece
-to a length of matte finish, invisible tape and carefully position it in
-place. A bit of careful work with an x-acto knife and you've got
-yourself a label that looks like it's part of the panel. If you look
-closely at the front panel image you can see the edges of the
-transparency film and the tape, but in practice they both essentially
-disappear.
-
-## The PCB
-
-The PCB includes cutouts for the two columns that join the case
-together, and mounting holes for the 6 standoffs. Also, there's an oddly
-shaped cutout in back end to allow a particular IDC DE-9F I had on hand.
-It's available from DigiKey (or a very close clone is) but it's fairly
-pricey. But there's plenty of room for an ordinary solder cup DE-9F.
-You'd most likely want to omit the 10 pin header and just wire the DE-9F
-right to the board.
-
-Unlike the original Retro Wifi Modem, I made no attempt to make this
-board by hand. Instead, I took advantage of an introductory offer by a
-well known PCB house and had PCBs made. 5 boards for under 20 bucks, and
-delivered in under a week? Who could say no?
+For storage, the onboard Pico's flash is used with LittleFS in a section
+not occupied by the firmware.
 
 ## The Software
 
@@ -201,50 +104,6 @@ AT$TTL?<br>AT$TTL=*telnet location* | Query or change the Telnet location value 
 AT$TTS?<br>AT$TTS=*WxH* | Query or change the window size (columns x rows) to be returned when the Telnet server issues a NAWS (Negotiate About Window Size) request. The default value is 80x24. For terminals that are smaller than 80x24, setting these values appropriately will enable paging on the help (AT?) and network status (ATI) commands.
 AT$TTY?<br>AT$TTY=*terminal type* | Query or change the terminal type to be returned when the Telnet server issues a TERMINAL-TYPE request. The default value is "ansi".
 AT$W?<br>AT$W=*n* | Startup wait.<br><br><ul><li>$W=0 Startup with no wait.</li><li>$W=1 Wait for the return key to be pressed at startup.</li></ul>
-
-### Updating the Code
-
-As I'm writing this, I haven't settled on an OTA programming method that
-I like. But I will figure something out; taking the modem apart to do a
-code update will get old the very first time I have to do it. Plus,
-it means that the Pico W can't be soldered down to the PCB, and that'd
-be a nice to have as well.
-
-## Status
-
-It's a work in progress at the moment. The lack of OTA programming is
-the big "needs to be done" item.
-
-As this is my first Pico project, and the first time I've written lwIP 
-stuff (and the first time I've really had to make changes to CMake 
-stuff), I've run headlong into all the usual beginner gotchas. And I'm
-completely, absolutely sure that I haven't found them all yet.
-
-The code works reasonably well at the moment; it can call out, you can 
-call in, Ymodem and Zmodem transfers work, I've figured out why it used
-to appear to lock up when I left it alone for 10 minutes (Wifi power
-management, if you're wondering)... but I'm under no illusion that there
-aren't bugs aplenty yet to be squashed. After all, I found a handful of
-problems in the original ESP8266 Retro Wifi modem code while I was
-getting the Pico code working, and the ESP code had been pretty much
-stable for over two years.
-
-And I think I may have also discovered why every once in a while, the
-modem would get behind a few (or many) characters either on receive or
-transmit. The 'volatile' qualifier isn't of as much use with variables
-modified by two threads as it is with memory mapped I/O or hardware
-registers. To make a long story short, '++var' and '--var' aren't
-atomic operations; they're read/modify/write. And every once in a great
-while the main thread would be updated a buffer length at the same time
-the lwIP thread was updating the same buffer length and whackiness
-ensued.
-
-For the moment, I've taken the naive approach of surrounding the buffer
-length writes with disable/re-enable interrupt calls. I think that will
-work reasonably well (though if I ever decided to make use of the second
-core, it'll fail because interrupts are only disabled on the calling
-core). If not, it'll be time to bone up on mutexes and semaphores and
-critical sections.
 
 ### Linux, Telnet, Zmodem and downloading binary files
 
