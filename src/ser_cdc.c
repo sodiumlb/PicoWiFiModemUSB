@@ -44,26 +44,43 @@ bool ser_is_readable(ser_inst_t ser){
     return tud_cdc_n_available((unsigned int)ser) != 0;
 }
 
+bool ser_is_writeable(ser_inst_t ser){
+    return tud_cdc_n_write_available((unsigned int)ser) != 0;
+}
+
 char ser_getc(ser_inst_t ser){
     return (char)tud_cdc_n_read_char((unsigned int)ser);
 }
 
 void ser_putc(ser_inst_t ser, char c){
+    if(!ser_is_writeable(ser)){
+        tud_cdc_n_write_flush((unsigned int)ser);
+        tud_task();
+    }
     tud_cdc_n_write_char((unsigned int)ser, c);
-    tud_cdc_n_write_flush((unsigned int)ser);
 }
 
 void ser_putc_raw(ser_inst_t ser, char c){
+    if(!ser_is_writeable(ser)){
+        tud_cdc_n_write_flush((unsigned int)ser);
+        tud_task();
+    }
     tud_cdc_n_write_char((unsigned int)ser, c);
-    //tud_cdc_n_write_flush((unsigned int)ser);
 }
 
 void ser_tx_wait_blocking(ser_inst_t ser){
     tud_cdc_n_write_flush((unsigned int)ser);
+    tud_task();
 }
 
 void ser_puts(ser_inst_t ser, const char *s){
-    tud_cdc_n_write_str((unsigned int)ser, s);
+    uint32_t written = 0;
+    uint32_t length = strlen(s);
+    do {
+        written += tud_cdc_n_write((unsigned int)ser,(char*)(s+written),length-written);
+        if(written < length)
+            tud_task();
+    }while(written < length);
 }
 
 void ser_set_break(ser_inst_t ser, bool en){

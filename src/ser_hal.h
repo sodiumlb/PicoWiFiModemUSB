@@ -40,6 +40,7 @@ unsigned int ser_set_baudrate(ser_inst_t ser, unsigned int baudrate);
 void ser_set_format(ser_inst_t ser, unsigned int dataBits, unsigned int stopBits, ser_parity_t parity);
 void ser_set_translate_crlf(ser_inst_t ser, bool translate);
 bool ser_is_readable(ser_inst_t ser);
+bool ser_is_writeable(ser_inst_t ser);
 char ser_getc(ser_inst_t ser);
 void ser_putc(ser_inst_t ser, char c);
 void ser_putc_raw(ser_inst_t ser, char c);
