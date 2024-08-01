@@ -26,6 +26,7 @@
 //   You should have received a copy of the GNU General Public License
 //   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
+#define DEBUG 1
 #include <string.h>
 #include <time.h>
 #include <malloc.h>
@@ -36,6 +37,10 @@
 #include "hardware/i2c.h"
 #include "hardware/sync.h"
 
+#include "wifi_modem.h"
+#include "types.h"
+#include "globals.h"
+
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
 #include "lwip/dns.h"
@@ -45,7 +50,6 @@
 
 #include "ser_hal.h"
 #include "wifi_modem.h"
-#include "globals.h"
 //#include "eeprom.h"
 #include "lfs.h"
 #include "tcp_support.h"
