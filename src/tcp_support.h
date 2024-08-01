@@ -236,7 +236,7 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum) {
       return NULL;
    }
    
-   while( client->pcb && client->pcb->callback_arg && !client->connectFinished && !uart_is_readable(uart0)) {
+   while( client->pcb && client->pcb->callback_arg && !client->connectFinished && !ser_is_readable(ser0)) {
       tight_loop_contents();
    }
    if( !client->connected ) {
