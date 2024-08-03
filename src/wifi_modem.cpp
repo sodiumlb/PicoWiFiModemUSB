@@ -61,7 +61,12 @@
 void setup(void) {
    bool ok = true;
 
+   tud_init(TUD_OPT_RHPORT);
    stdio_init_all();
+   cdc_init();
+   do{
+      tud_task();
+   }while(!tud_ready());
 
    //gpio_init(DTR);
    //gpio_set_dir(DTR, INPUT);
@@ -91,8 +96,6 @@ void setup(void) {
    gpio_put(TXBUFF_OVFL, LOW);
 #endif
 
-   tud_init(TUD_OPT_RHPORT);
-   cdc_init();
 
    //initEEPROM();
    initLFS();
