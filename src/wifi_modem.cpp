@@ -347,7 +347,8 @@ void doAtCmds(char *atCmd) {
                   atCmd = showNetworkInfo(atCmd + 1);
                } else if( !strncasecmp(atCmd, "Z", 1) ) {
                   // reset to NVRAM
-                  atCmd = resetToNvram(atCmd + 1);
+                  //atCmd = resetToNvram(atCmd + 1);
+                  atCmd = atCmd + 1; //Skip - Hard reset drops USB, trouble on some devices. TODO softer ATZ implementation
                } else if( !strncasecmp(atCmd, "&V", 2) ) {
                   // display current and stored settings
                   atCmd = displayAllSettings(atCmd + 2);
