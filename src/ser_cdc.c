@@ -53,19 +53,21 @@ char ser_getc(ser_inst_t ser){
 }
 
 void ser_putc(ser_inst_t ser, char c){
-    if(!ser_is_writeable(ser)){
+    while(!ser_is_writeable(ser)){
         tud_cdc_n_write_flush((unsigned int)ser);
         tud_task();
     }
     tud_cdc_n_write_char((unsigned int)ser, c);
+    tud_cdc_n_write_flush((unsigned int)ser);
 }
 
 void ser_putc_raw(ser_inst_t ser, char c){
-    if(!ser_is_writeable(ser)){
+    while(!ser_is_writeable(ser)){
         tud_cdc_n_write_flush((unsigned int)ser);
         tud_task();
     }
     tud_cdc_n_write_char((unsigned int)ser, c);
+    tud_cdc_n_write_flush((unsigned int)ser);
 }
 
 void ser_tx_wait_blocking(ser_inst_t ser){
@@ -78,14 +80,21 @@ void ser_puts(ser_inst_t ser, const char *s){
     uint32_t length = strlen(s);
     do {
         written += tud_cdc_n_write((unsigned int)ser,(char*)(s+written),length-written);
+        tud_cdc_n_write_flush((unsigned int)ser);
         if(written < length)
             tud_task();
     }while(written < length);
 }
 
 void ser_set_break(ser_inst_t ser, bool en){
-    if(en)
+    if(en){
+        while(!ser_is_writeable(ser)){
+            tud_cdc_n_write_flush((unsigned int)ser);
+            tud_task();
+        }
         tud_cdc_n_write_char((unsigned int)ser, (char)243); //Send BRK. Assumes Telnet. ok?
+        tud_cdc_n_write_flush((unsigned int)ser);
+    }
 }
 
 void ser_set_hw_flow(ser_inst_t ser, bool cts, bool rts){
