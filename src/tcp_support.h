@@ -36,7 +36,7 @@ uint32_t millis(void) {
 }
 
 bool tcpIsConnected(TCP_CLIENT_T *client) {
-   if( client && client->pcb && client->pcb->callback_arg ) {
+   if( client && client->pcb && client->pcb->arg ) {
       return client->connected;
    }
    return false;
@@ -49,14 +49,14 @@ err_t tcpClientClose(TCP_CLIENT_T *client) {
    if( client ) {
       client->connected = false;
       if( client->pcb ) {
-         tcp_err( client->pcb, NULL);
-         tcp_sent(client->pcb, NULL);
-         tcp_poll(client->pcb, NULL, 0);
-         tcp_recv(client->pcb, NULL);
-         tcp_arg( client->pcb, NULL);
-         err = tcp_close(client->pcb);
+         altcp_err( client->pcb, NULL);
+         altcp_sent(client->pcb, NULL);
+         altcp_poll(client->pcb, NULL, 0);
+         altcp_recv(client->pcb, NULL);
+         altcp_arg( client->pcb, NULL);
+         err = altcp_close(client->pcb);
          if( err != ERR_OK ) {
-            tcp_abort(client->pcb);
+            altcp_abort(client->pcb);
             err = ERR_ABRT;
          }
          client->pcb = NULL;
@@ -82,14 +82,14 @@ static err_t tcpSend(TCP_CLIENT_T *client) {
    uint32_t ints;
    
    if( client->txBuffLen ) {
-      uint16_t maxLen = tcp_sndbuf(client->pcb);
-      if( maxLen > 0 && tcp_sndqueuelen(client->pcb) < TCP_SND_QUEUELEN ) {
+      uint16_t maxLen = altcp_sndbuf(client->pcb);
+      if( maxLen > 0 && altcp_sndqueuelen(client->pcb) < TCP_SND_QUEUELEN ) {
          if( client->txBuffLen < maxLen ) {
             maxLen = client->txBuffLen;
          }
          uint8_t tmp[maxLen];
          // make copies of the head and length and work
-         // with those in case tcp_write fails and we
+         // with those in case altcp_write fails and we
          // have to re-send the same data later
          uint16_t tmpTxBuffHead = client->txBuffHead;
          uint16_t tmpTxBuffLen = client->txBuffLen;
@@ -100,9 +100,9 @@ static err_t tcpSend(TCP_CLIENT_T *client) {
             }
             --tmpTxBuffLen;
          }
-         err = tcp_write(client->pcb, tmp, maxLen, TCP_WRITE_FLAG_COPY);
+         err = altcp_write(client->pcb, tmp, maxLen, TCP_WRITE_FLAG_COPY);
          client->waitingForAck = err == ERR_OK;
-         tcp_output(client->pcb);
+         altcp_output(client->pcb);
          if( err == ERR_OK ) {
             client->txBuffHead = tmpTxBuffHead;
             ints = save_and_disable_interrupts();
@@ -118,7 +118,7 @@ static err_t tcpSend(TCP_CLIENT_T *client) {
    return err;
 }
 
-static err_t tcpSent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
+static err_t tcpSent(void *arg, struct altcp_pcb *tpcb, u16_t len) {
    TCP_CLIENT_T *client = (TCP_CLIENT_T *)arg;
    err_t err = ERR_OK;
    
@@ -130,10 +130,10 @@ static err_t tcpSent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
    return err;
 }
 
-// in the event that the tcp_write call in tcpSend failed earlier,
+// in the event that the altcp_write call in tcpSend failed earlier,
 // and there weren't any other packets waiting to be ACKed, try
 // sending any data in the txBuff again.
-static err_t tcpPoll(void *arg, struct tcp_pcb *tpcb) {
+static err_t tcpPoll(void *arg, struct altcp_pcb *tpcb) {
    TCP_CLIENT_T *client = (TCP_CLIENT_T *)arg;
    err_t err = ERR_OK;
 #ifndef NDEBUG
@@ -148,7 +148,7 @@ static err_t tcpPoll(void *arg, struct tcp_pcb *tpcb) {
    return err;
 }
 
-static err_t tcpRecv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
+static err_t tcpRecv(void *arg, struct altcp_pcb *tpcb, struct pbuf *p, err_t err) {
    TCP_CLIENT_T *client = (TCP_CLIENT_T *)arg;
    
    if( !p ) {
@@ -173,7 +173,7 @@ static err_t tcpRecv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
       }
 #endif
       if( client->rxBuffLen <= TCP_MSS ) {
-         tcp_recved(client->pcb, p->tot_len);
+         altcp_recved(client->pcb, p->tot_len);
       } else {
          client->totLen += p->tot_len;
 #ifndef NDEBUG
@@ -187,7 +187,7 @@ static err_t tcpRecv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
    return ERR_OK;
 }
 
-static err_t tcpHasConnected(void *arg, struct tcp_pcb *tpcb, err_t err) {
+static err_t tcpHasConnected(void *arg, struct altcp_pcb *tpcb, err_t err) {
    TCP_CLIENT_T *client = (TCP_CLIENT_T*)arg;
    
    client->connectFinished = true;
@@ -202,17 +202,21 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum) {
    if( !dnsLookup(host, &client->remoteAddr) ) {
       return NULL;
    } else {
-      client->pcb = tcp_new_ip_type(IP_GET_TYPE(client->remoteAddr));
+      // Sprint 1 (altcp migration): plain TCP allocator behind the altcp API.
+      // The TLS sprint branches here on a per-session secure flag, swapping in
+      // altcp_tls_alloc(&tlsConfig, ...) to terminate TLS transparently.
+      altcp_allocator_t allocator = { altcp_tcp_alloc, NULL };
+      client->pcb = altcp_new_ip_type(&allocator, IP_GET_TYPE(client->remoteAddr));
       if( !client->pcb ) {
          return NULL;
       }
    }
-   tcp_arg( client->pcb, client);
-   tcp_recv(client->pcb, tcpRecv);
-   tcp_sent(client->pcb, tcpSent);
-   tcp_poll(client->pcb, tcpPoll, 2);
-   tcp_err( client->pcb, tcpClientErr);
-   tcp_nagle_disable(client->pcb);  // disable Nalge algorithm by default
+   altcp_arg( client->pcb, client);
+   altcp_recv(client->pcb, tcpRecv);
+   altcp_sent(client->pcb, tcpSent);
+   altcp_poll(client->pcb, tcpPoll, 2);
+   altcp_err( client->pcb, tcpClientErr);
+   altcp_nagle_disable(client->pcb);  // disable Nalge algorithm by default
 
    client->rxBuffLen = 0;
    client->rxBuffHead = 0;
@@ -228,7 +232,7 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum) {
    client->waitingForAck = false;
 
    cyw43_arch_lwip_begin();
-   err_t err = tcp_connect(client->pcb, &client->remoteAddr, portNum, tcpHasConnected);
+   err_t err = altcp_connect(client->pcb, &client->remoteAddr, portNum, tcpHasConnected);
    cyw43_arch_lwip_end();
    
    if( err != ERR_OK ) {
@@ -236,7 +240,7 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum) {
       return NULL;
    }
    
-   while( client->pcb && client->pcb->callback_arg && !client->connectFinished && !ser_is_readable(ser0)) {
+   while( client->pcb && client->pcb->arg && !client->connectFinished && !ser_is_readable(ser0)) {
       tight_loop_contents();
    }
    if( !client->connected ) {
@@ -256,13 +260,13 @@ static void tcpServerErr(void *arg, err_t err) {
    }
 }
 
-static err_t tcpServerAccept(void *arg, struct tcp_pcb *clientPcb, err_t err) {
+static err_t tcpServerAccept(void *arg, struct altcp_pcb *clientPcb, err_t err) {
    TCP_SERVER_T *server = (TCP_SERVER_T*)arg;
 
    if( err != ERR_OK || !clientPcb ) {
 //###      printf("Failure in accept: %d\n",err); //###
       server->clientPcb = NULL;
-      tcp_close(server->pcb);
+      altcp_close(server->pcb);
       return ERR_VAL;
    }
 //###   if( server->clientPcb ) {
@@ -273,30 +277,31 @@ static err_t tcpServerAccept(void *arg, struct tcp_pcb *clientPcb, err_t err) {
 }
 
 bool tcpServerStart(TCP_SERVER_T *server, int portNum) {
-   server->pcb = tcp_new_ip_type(IPADDR_TYPE_ANY);
+   altcp_allocator_t allocator = { altcp_tcp_alloc, NULL };
+   server->pcb = altcp_new_ip_type(&allocator, IPADDR_TYPE_ANY);
    if( !server->pcb ) {
       return false;
    }
 
-   if( tcp_bind(server->pcb, NULL, portNum) != ERR_OK ) {
+   if( altcp_bind(server->pcb, NULL, portNum) != ERR_OK ) {
       return false;
    }
 
    server->clientPcb = NULL;
 
-   struct tcp_pcb *pcb = tcp_listen_with_backlog(server->pcb, 1);
+   struct altcp_pcb *pcb = altcp_listen_with_backlog(server->pcb, 1);
    if( !pcb ) {
       if( server->pcb ) {
-         tcp_close(server->pcb);
+         altcp_close(server->pcb);
          server->pcb = NULL;
       }
       return false;
    }
    server->pcb = pcb;
 
-   tcp_arg(   server->pcb, server);
-   tcp_accept(server->pcb, tcpServerAccept);
-   tcp_err(   server->pcb, tcpServerErr);
+   altcp_arg(   server->pcb, server);
+   altcp_accept(server->pcb, tcpServerAccept);
+   altcp_err(   server->pcb, tcpServerErr);
 
    return true;
 }
@@ -304,7 +309,7 @@ bool tcpServerStart(TCP_SERVER_T *server, int portNum) {
 uint16_t tcpWriteBuf(TCP_CLIENT_T *client, const uint8_t *buf, uint16_t len) {
    uint32_t ints;
    
-   if( client && client->pcb && client->pcb->callback_arg ) {
+   if( client && client->pcb && client->pcb->arg ) {
 
       if( client->txBuffLen + len > TCP_CLIENT_TX_BUF_SIZE && client->connected ) {
 #ifndef NDEBUG
@@ -335,7 +340,7 @@ uint16_t tcpWriteBuf(TCP_CLIENT_T *client, const uint8_t *buf, uint16_t len) {
          maxTxBuffLen = client->txBuffLen;
       }
 #endif
-      if( client->txBuffLen && client->pcb && client->pcb->callback_arg && !client->waitingForAck ) {
+      if( client->txBuffLen && client->pcb && client->pcb->arg && !client->waitingForAck ) {
          tcpSend(client);
       }
       cyw43_arch_lwip_end();
@@ -379,7 +384,7 @@ int tcpReadByte(TCP_CLIENT_T *client, int rqstTimeout = -1) {
             restore_interrupts(ints);
             if( !client->rxBuffLen && client->totLen && client->pcb) {
                cyw43_arch_lwip_begin();
-               tcp_recved(client->pcb, client->totLen);
+               altcp_recved(client->pcb, client->totLen);
                client->totLen = 0;
                cyw43_arch_lwip_end();
             }
@@ -444,12 +449,12 @@ TCP_CLIENT_T *serverGetClient(TCP_SERVER_T *server, TCP_CLIENT_T *client) {
 
    client->waitingForAck = false;
 
-   tcp_arg( client->pcb, client);
-   tcp_err( client->pcb, tcpClientErr);
-   tcp_sent(client->pcb, tcpSent);
-   tcp_poll(client->pcb, tcpPoll, 2);
-   tcp_recv(client->pcb, tcpRecv);
-   tcp_nagle_disable(client->pcb);  // disable Nalge algorithm by default
+   altcp_arg( client->pcb, client);
+   altcp_err( client->pcb, tcpClientErr);
+   altcp_sent(client->pcb, tcpSent);
+   altcp_poll(client->pcb, tcpPoll, 2);
+   altcp_recv(client->pcb, tcpRecv);
+   altcp_nagle_disable(client->pcb);  // disable Nalge algorithm by default
 
    client->connected = true;
    client->connectFinished = true;

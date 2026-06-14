@@ -2,6 +2,8 @@
    #define _TYPES_H
    #include "pico/stdlib.h"
    #include "lwip/dns.h"
+   #include "lwip/altcp.h"
+   #include "lwip/altcp_tcp.h"
    #include "wifi_modem.h"
 
    typedef enum ResultCodes { R_OK, R_CONNECT, R_RING, R_NO_CARRIER, R_ERROR, R_NO_ANSWER, R_RING_IP } ResultCodes;
@@ -38,7 +40,7 @@
    } SETTINGS_T;
    
    typedef struct TCP_CLIENT_T_ {
-      struct tcp_pcb *pcb;
+      struct altcp_pcb *pcb;
       ip_addr_t remoteAddr;
       volatile bool connected;
       volatile bool connectFinished;
@@ -55,7 +57,7 @@
    } TCP_CLIENT_T;
    
    typedef struct TCP_SERVER_T_ {
-      struct tcp_pcb *pcb;
-      struct tcp_pcb *clientPcb;
+      struct altcp_pcb *pcb;
+      struct altcp_pcb *clientPcb;
    } TCP_SERVER_T;
 #endif
