@@ -1,0 +1,73 @@
+/*
+ * mbedTLS configuration for PicoWiFiModemUSB — TLS-terminating proxy.
+ *
+ * Client-side TLS 1.2 only (the modem dials out; it never serves TLS to the
+ * Oric). Entropy comes from the Pico SDK's mbedtls_hardware_poll (ROSC-based
+ * get_rand_64), selected by MBEDTLS_ENTROPY_HARDWARE_ALT.
+ *
+ * Derived from the Pico SDK test config (pico-sdk/test/kitchen_sink), which is
+ * known to build and run against mbedTLS 2.28 on RP2040. Memory note: the TLS
+ * output record is capped at 2 KB; the input record keeps the mbedTLS default
+ * (16 KB) so large certificate chains in the handshake still fit. Trimming RAM
+ * further (and dropping the unused server side) is deferred to a later sprint.
+ */
+#ifndef _MBEDTLS_CONFIG_PICOWIFI_H
+#define _MBEDTLS_CONFIG_PICOWIFI_H
+
+/* Workaround for some mbedtls source files using INT_MAX without including limits.h */
+#include <limits.h>
+
+#define MBEDTLS_NO_PLATFORM_ENTROPY
+#define MBEDTLS_ENTROPY_HARDWARE_ALT
+
+#define MBEDTLS_SSL_OUT_CONTENT_LEN    2048
+
+#define MBEDTLS_ALLOW_PRIVATE_ACCESS
+#define MBEDTLS_HAVE_TIME
+
+#define MBEDTLS_CIPHER_MODE_CBC
+#define MBEDTLS_ECP_DP_SECP256R1_ENABLED
+#define MBEDTLS_ECP_DP_SECP384R1_ENABLED
+#define MBEDTLS_ECP_DP_SECP521R1_ENABLED
+#define MBEDTLS_ECP_DP_CURVE25519_ENABLED
+#define MBEDTLS_KEY_EXCHANGE_RSA_ENABLED
+#define MBEDTLS_PKCS1_V15
+#define MBEDTLS_SHA256_SMALLER
+#define MBEDTLS_SSL_SERVER_NAME_INDICATION
+#define MBEDTLS_AES_C
+#define MBEDTLS_ASN1_PARSE_C
+#define MBEDTLS_BIGNUM_C
+#define MBEDTLS_CIPHER_C
+#define MBEDTLS_CTR_DRBG_C
+#define MBEDTLS_ENTROPY_C
+#define MBEDTLS_ERROR_C
+#define MBEDTLS_MD_C
+#define MBEDTLS_MD5_C
+#define MBEDTLS_OID_C
+#define MBEDTLS_PKCS5_C
+#define MBEDTLS_PK_C
+#define MBEDTLS_PK_PARSE_C
+#define MBEDTLS_PLATFORM_C
+#define MBEDTLS_RSA_C
+#define MBEDTLS_SHA1_C
+#define MBEDTLS_SHA224_C
+#define MBEDTLS_SHA256_C
+#define MBEDTLS_SHA512_C
+#define MBEDTLS_SSL_CLI_C
+#define MBEDTLS_SSL_SRV_C
+#define MBEDTLS_SSL_TLS_C
+#define MBEDTLS_X509_CRT_PARSE_C
+#define MBEDTLS_X509_USE_C
+#define MBEDTLS_AES_FEWER_TABLES
+
+/* TLS 1.2 */
+#define MBEDTLS_SSL_PROTO_TLS1_2
+#define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+#define MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
+#define MBEDTLS_GCM_C
+#define MBEDTLS_ECDH_C
+#define MBEDTLS_ECP_C
+#define MBEDTLS_ECDSA_C
+#define MBEDTLS_ASN1_WRITE_C
+
+#endif /* _MBEDTLS_CONFIG_PICOWIFI_H */

@@ -153,19 +153,31 @@ char *dialNumber(char *atCmd) {
    }
 
    sessionTelnetType = settings.telnet;
-   switch( host[0] ) {
-      case '-':
-         ++host;
-         sessionTelnetType = NO_TELNET;
-         break;
-      case '=':
-         ++host;
-         sessionTelnetType = REAL_TELNET;
-         break;
-      case '+':
-         ++host;
-         sessionTelnetType = FAKE_TELNET;
-         break;
+   sessionSecure = false;
+   // Leading dial prefixes (combinable, e.g. "#=host"): '-' no telnet,
+   // '=' real telnet, '+' fake telnet, '#' terminate TLS for this call.
+   for( bool more = true; more; ) {
+      switch( host[0] ) {
+         case '-':
+            ++host;
+            sessionTelnetType = NO_TELNET;
+            break;
+         case '=':
+            ++host;
+            sessionTelnetType = REAL_TELNET;
+            break;
+         case '+':
+            ++host;
+            sessionTelnetType = FAKE_TELNET;
+            break;
+         case '#':
+            ++host;
+            sessionSecure = true;
+            break;
+         default:
+            more = false;
+            break;
+      }
    }
 
    if( !settings.quiet && settings.extendedCodes ) {
@@ -174,7 +186,7 @@ char *dialNumber(char *atCmd) {
    }
    sleep_ms(2000);   // delay for ZMP to be able to detect CONNECT
    if( !ser_is_readable(ser0) ) {
-      tcpClient = tcpConnect( &tcpClient0, host, portNum);
+      tcpClient = tcpConnect( &tcpClient0, host, portNum, sessionSecure);
       if( tcpClient ) {
          connectTime = millis();
          dtrWentInactive = false;
@@ -260,8 +272,8 @@ char *httpGet(char *atCmd) {
    }
    printf(" from port %u of host %s...\r\n", portNum, host);
 #endif
-   // Establish connection
-   tcpClient = tcpConnect(&tcpClient0, host, portNum);
+   // Establish connection (plain HTTP; https is a later sprint)
+   tcpClient = tcpConnect(&tcpClient0, host, portNum, false);
    if( !tcpClient ) {
       sendResult(R_NO_CARRIER);
       ser_set(DCD, !ACTIVE);
@@ -589,7 +601,7 @@ char *doDateTime(char *atCmd) {
    
    if( !tcpIsConnected(tcpClient) ) {
       char result[80], *ptr;
-      tcpClient = tcpConnect(&tcpClient0, NIST_HOST, NIST_PORT);
+      tcpClient = tcpConnect(&tcpClient0, NIST_HOST, NIST_PORT, false);
       if( tcpClient ) {
          ser_set(DCD, ACTIVE);
          // read date/time from NIST

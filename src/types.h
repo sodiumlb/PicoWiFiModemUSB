@@ -4,6 +4,7 @@
    #include "lwip/dns.h"
    #include "lwip/altcp.h"
    #include "lwip/altcp_tcp.h"
+   #include "lwip/altcp_tls.h"
    #include "wifi_modem.h"
 
    typedef enum ResultCodes { R_OK, R_CONNECT, R_RING, R_NO_CARRIER, R_ERROR, R_NO_ANSWER, R_RING_IP } ResultCodes;

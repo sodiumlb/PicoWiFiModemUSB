@@ -198,14 +198,30 @@ static err_t tcpHasConnected(void *arg, struct altcp_pcb *tpcb, err_t err) {
    return ERR_OK;
 }
 
-TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum) {
+TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bool secure) {
    if( !dnsLookup(host, &client->remoteAddr) ) {
       return NULL;
    } else {
-      // Sprint 1 (altcp migration): plain TCP allocator behind the altcp API.
-      // The TLS sprint branches here on a per-session secure flag, swapping in
-      // altcp_tls_alloc(&tlsConfig, ...) to terminate TLS transparently.
-      altcp_allocator_t allocator = { altcp_tcp_alloc, NULL };
+      // The altcp allocator selects the transport: plain TCP, or a terminated
+      // TLS session when the call is secure (dial prefix '#'). The client TLS
+      // config carries no CA, so mbedTLS runs in VERIFY_OPTIONAL mode: the
+      // handshake completes but the peer certificate is NOT verified (insecure;
+      // CA-bundle verification is a later sprint). Created once, then shared.
+      altcp_allocator_t allocator;
+      if( secure ) {
+         static struct altcp_tls_config *tlsConfig = NULL;
+         if( !tlsConfig ) {
+            tlsConfig = altcp_tls_create_config_client(NULL, 0);
+         }
+         if( !tlsConfig ) {
+            return NULL;
+         }
+         allocator.alloc = altcp_tls_alloc;
+         allocator.arg = tlsConfig;
+      } else {
+         allocator.alloc = altcp_tcp_alloc;
+         allocator.arg = NULL;
+      }
       client->pcb = altcp_new_ip_type(&allocator, IP_GET_TYPE(client->remoteAddr));
       if( !client->pcb ) {
          return NULL;

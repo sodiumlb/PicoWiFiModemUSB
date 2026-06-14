@@ -50,11 +50,12 @@
 #define LWIP_TCP_KEEPALIVE          1
 #define LWIP_NETIF_TX_SINGLE_PBUF   1
 // Application-layered TCP (altcp): lets the modem open either a plain TCP
-// connection or, once mbedTLS is wired in (sprint TLS), a terminated TLS
-// session, behind one isomorphic API. Sprint 1 enables altcp with the plain
-// allocator only — no behaviour change. TLS is added on top later via
-// LWIP_ALTCP_TLS / LWIP_ALTCP_TLS_MBEDTLS.
+// connection or a terminated TLS session, behind one isomorphic API. Sprint 1
+// enabled altcp with the plain allocator only; the TLS sprint layers mbedTLS on
+// top via LWIP_ALTCP_TLS / LWIP_ALTCP_TLS_MBEDTLS.
 #define LWIP_ALTCP                  1
+#define LWIP_ALTCP_TLS              1
+#define LWIP_ALTCP_TLS_MBEDTLS      1
 #define DHCP_DOES_ARP_CHECK         0
 #define LWIP_DHCP_DOES_ACD_CHECK    0
 

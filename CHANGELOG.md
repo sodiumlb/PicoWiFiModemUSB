@@ -41,7 +41,47 @@ session TLS terminée (sprint TLS) derrière une interface unique.
   Artefacts : `wifi_modem.elf` (~1,90 Mo) et `wifi_modem.uf2` (~796 Ko) — taille
   flash de référence pour mesurer le surcoût du sprint TLS.
 
+### Sprint 2 — Terminaison TLS (mbedTLS via altcp_tls)
+
+Le modem peut désormais **terminer une session TLS** vers le serveur distant et
+présenter du clair côté série : l'Oric atteint des BBS/services chiffrés sans
+faire de cryptographie. Mode **insecure** pour ce premier jet (handshake réussi
+mais certificat **non vérifié**) ; la vérification CA est prévue au sprint 3.
+
+**Ajouté**
+- `src/mbedtls_config.h` : configuration mbedTLS 2.28 client (TLS 1.2, ECDHE/RSA,
+  AES-GCM, SNI), entropie matérielle (`MBEDTLS_ENTROPY_HARDWARE_ALT` →
+  `mbedtls_hardware_poll` du SDK), record de sortie plafonné à 2 Ko. Dérivée du
+  modèle SDK `kitchen_sink`.
+- `src/globals.h` : `bool sessionSecure` — marque la session courante comme TLS.
+- Dial : préfixe **`#`** combinable (ex. `ATDT#bbs.example.com:992`, `ATDT#=host`)
+  pour ouvrir la connexion en TLS.
+
+**Modifié**
+- `src/lwipopts.h` : `LWIP_ALTCP_TLS=1`, `LWIP_ALTCP_TLS_MBEDTLS=1`.
+- `src/CMakeLists.txt` : lien `pico_lwip_mbedtls` + `pico_mbedtls` ;
+  `MBEDTLS_CONFIG_FILE="mbedtls_config.h"`.
+- `src/types.h` : include `lwip/altcp_tls.h`.
+- `src/tcp_support.h` : `tcpConnect()` prend un paramètre `bool secure` ; en mode
+  sécurisé, l'allocateur devient `altcp_tls_alloc` avec une config client
+  partagée (`altcp_tls_create_config_client(NULL, 0)` → `VERIFY_OPTIONAL`, pas de
+  CA). Sinon allocateur plain inchangé.
+- `src/at_basic.h` : parsing du préfixe `#`, propagation de `sessionSecure` à
+  l'appel de dial ; `ATGET` (HTTP) et la date NIST passent explicitement `false`.
+
+**Empreinte (arm-none-eabi-size / uf2)**
+- Flash : 777 Ko → **964 Ko** (+186 Ko mbedTLS) sur 2 Mo — confortable.
+- RAM statique (bss) : **98 Ko** / 264 Ko — laisse ~166 Ko pour pile + heap +
+  buffers TLS dynamiques du handshake. Une session TLS simultanée tient.
+
+**Validation**
+- ✅ Compilation OK (mbedTLS 2.28.1 compilée et liée : `ssl_cli`, `ssl_tls`,
+  `x509_crt`…). Artefact `wifi_modem.uf2`.
+- ⚠️ **Runtime non testé** : pas de matériel Pico W dans cet environnement. Le
+  handshake TLS réel (et le comportement en `threadsafe_background`) reste à
+  vérifier sur cible.
+
 ### À venir
-- Sprint TLS : `mbedtls_config.h`, `LWIP_ALTCP_TLS*`, lien `pico_lwip_mbedtls`,
-  branche TLS dans `tcpConnect`, commande AT de dial sécurisé, budget RAM mesuré.
+- Sprint 3 : vérification de certificat (bundle CA en LittleFS), SNI explicite,
+  `ATGET https`, réduction RAM (`MBEDTLS_SSL_IN_CONTENT_LEN`), tests sur cible.
 - R&D SSH : étude wolfSSH vs shim socket (bloqué par `LWIP_SOCKET=0`).
