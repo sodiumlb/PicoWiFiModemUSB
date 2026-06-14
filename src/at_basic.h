@@ -483,7 +483,7 @@ char *showNetworkInfo(char *atCmd) {
       snprintf(infoLine, sizeof infoLine, "Pgm. free..: %lu", getFreeProgramSpace());
       if( PagedOut(infoLine) ) break;
       if( tcpIsConnected(tcpClient) ) {
-         snprintf(infoLine, sizeof infoLine, "Call status: CONNECTED TO %s", ip4addr_ntoa(&tcpClient->pcb->remote_ip));
+         snprintf(infoLine, sizeof infoLine, "Call status: CONNECTED TO %s", ip4addr_ntoa(altcp_get_ip(tcpClient->pcb, 0)));
          if( PagedOut(infoLine) ) break;
          snprintf(infoLine, sizeof infoLine, "Call length: %s", connectTimeString());
          if( PagedOut(infoLine) ) break;

@@ -28,6 +28,8 @@ session TLS terminée (sprint TLS) derrière une interface unique.
   → `pcb->arg`. `tcpConnect()` et `tcpServerStart()` créent le PCB via un
   `altcp_allocator_t` plain (`altcp_tcp_alloc`) — point d'insertion balisé pour
   l'allocateur TLS du sprint suivant.
+- `src/support.h` et `src/at_basic.h` : `&tcpClient->pcb->remote_ip` (champ absent
+  de `struct altcp_pcb`) → `altcp_get_ip(tcpClient->pcb, 0)`.
 
 **Build**
 - Aucun changement de `CMakeLists.txt` requis : `altcp.c`/`altcp_alloc.c`/
@@ -35,11 +37,9 @@ session TLS terminée (sprint TLS) derrière une interface unique.
   `#if LWIP_ALTCP`).
 
 **Validation**
-- ⚠️ Compilation non vérifiée dans cet environnement : la toolchain
-  `arm-none-eabi-gcc` n'est pas installée (installation soumise à autorisation
-  sudo). Vérification statique effectuée : inventaire des appels `altcp_*` croisé
-  avec les signatures du SDK (`lwip/altcp.h`, `lwip/altcp_tcp.h`), aucune
-  occurrence `tcp_*` minuscule résiduelle, macros `TCP_*` préservées.
+- ✅ Compilation OK (`arm-none-eabi-gcc` 14.2.1, `cmake -S src -B src/build`).
+  Artefacts : `wifi_modem.elf` (~1,90 Mo) et `wifi_modem.uf2` (~796 Ko) — taille
+  flash de référence pour mesurer le surcoût du sprint TLS.
 
 ### À venir
 - Sprint TLS : `mbedtls_config.h`, `LWIP_ALTCP_TLS*`, lien `pico_lwip_mbedtls`,

@@ -398,7 +398,7 @@ void sendResult(int resultCode) {
             case R_RING_IP:
                ser_puts(ser0, ringStr);
                if( settings.extendedCodes ) {
-                  printf(" %s", ip4addr_ntoa(&tcpClient->pcb->remote_ip));
+                  printf(" %s", ip4addr_ntoa(altcp_get_ip(tcpClient->pcb, 0)));
                }
                break;
 
