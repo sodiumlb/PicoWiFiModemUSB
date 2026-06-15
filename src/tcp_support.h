@@ -1,6 +1,10 @@
 //
 // lwIP interface functions
 //
+#if LWIP_ALTCP_TLS_MBEDTLS
+#include "mbedtls/ssl.h"   // mbedtls_ssl_set_hostname() for TLS SNI
+#endif
+
 static volatile bool dnsLookupFinished = false;
 
 static void dnsLookupDone(const char *name, const ip_addr_t *ipaddr, void *arg) {
@@ -227,6 +231,16 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
          return NULL;
       }
    }
+#if LWIP_ALTCP_TLS_MBEDTLS
+   if( secure ) {
+      // Set the TLS SNI (Server Name Indication). Without it, CDN-fronted hosts
+      // reject the handshake with a fatal alert, having no way to pick a cert.
+      mbedtls_ssl_context *ssl = (mbedtls_ssl_context *)altcp_tls_context(client->pcb);
+      if( ssl ) {
+         mbedtls_ssl_set_hostname(ssl, host);
+      }
+   }
+#endif
    altcp_arg( client->pcb, client);
    altcp_recv(client->pcb, tcpRecv);
    altcp_sent(client->pcb, tcpSent);
@@ -250,12 +264,11 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
    cyw43_arch_lwip_begin();
    err_t err = altcp_connect(client->pcb, &client->remoteAddr, portNum, tcpHasConnected);
    cyw43_arch_lwip_end();
-   
    if( err != ERR_OK ) {
       client->pcb = NULL;
       return NULL;
    }
-   
+
    while( client->pcb && client->pcb->arg && !client->connectFinished && !ser_is_readable(ser0)) {
       tight_loop_contents();
    }

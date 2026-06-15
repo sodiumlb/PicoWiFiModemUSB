@@ -81,7 +81,45 @@ mais certificat **non vérifié**) ; la vérification CA est prévue au sprint 3
   handshake TLS réel (et le comportement en `threadsafe_background`) reste à
   vérifier sur cible.
 
+### Sprint 2.1 — Validation runtime sous Wokwi + corrections TLS
+
+Test du firmware dans l'émulateur **Wokwi** (Pico W simulé, WiFi + accès Internet
+via la gateway). Le harnais a révélé et permis de corriger trois bugs TLS qui
+auraient aussi bloqué sur matériel réel.
+
+**Corrigé (essentiel au TLS)**
+- `src/tcp_support.h` : **SNI** ajouté (`mbedtls_ssl_set_hostname` sur le contexte
+  obtenu via `altcp_tls_context`). Sans SNI, les hôtes derrière un CDN rejettent
+  le handshake par une alerte fatale (`-0x7780`).
+- `src/lwipopts.h` : `TCP_WND` porté à `12*MSS` (≥ 16 Ko). Un `TCP_WND` plus
+  petit que le buffer de déchiffrement TLS fait staller la réception d'un gros
+  record (chaîne de certificats). `PBUF_POOL_SIZE` 24→32, `MEM_SIZE` 4000→16384.
+- `src/lwipopts.h` : `ALTCP_MBEDTLS_AUTHMODE = 0` (`MBEDTLS_SSL_VERIFY_NONE`).
+  En mode insecure sans CA, `VERIFY_OPTIONAL` faisait quand même échouer le
+  handshake (callback de vérif d'altcp + hostname). `NONE` complète le handshake.
+  La vérification réelle (avec CA) reste prévue au sprint 3.
+
+**Ajouté — variant de test Wokwi** (option CMake `-DWOKWI=1`)
+- `src/CMakeLists.txt` : option `WOKWI` ; backend série `ser_uart.c` (console
+  UART0) au lieu de `ser_cdc.c` ; macro `WOKWI_BUILD`.
+- `src/wifi_modem.cpp` (sous `#ifdef WOKWI_BUILD`) : saut de l'attente d'hôte USB
+  (`while(!tud_ready())`, qui bloque sans hôte USB dans la sim) ; SSID préconfiguré
+  `Wokwi-GUEST` en auth `OPEN` ; console 115200.
+- Harnais hors firmware : `../wokwi/` (diagram `board-pi-pico-w`, `wokwi.toml`),
+  piloté par `wokwi-cli --interactive`.
+
+**Résultat de validation**
+- ✅ Boot, WiFi (CYW43 simulé), DHCP, **HTTP réel** (`ATGET` → réponse Cloudflare).
+- ✅ Le firmware exécute un **handshake TLS client complet et correct** :
+  ClientHello → réception/traitement des certificats serveur → ClientKeyExchange
+  → ChangeCipherSpec → **Finished envoyé** (mesuré à ~8 s sur RP2040 *émulé*).
+- ⚠️ Complétion non atteinte **sous Wokwi uniquement** : la lenteur du crypto
+  émulé (~8 s, vs ~1-2 s sur silicium) dépasse le timeout de handshake des
+  serveurs, et la Public Gateway proxifie le TLS (MITM). Ces deux causes sont des
+  artefacts de l'émulateur, pas du firmware. La complétion `CONNECT` reste à
+  confirmer sur **matériel réel**.
+
 ### À venir
-- Sprint 3 : vérification de certificat (bundle CA en LittleFS), SNI explicite,
-  `ATGET https`, réduction RAM (`MBEDTLS_SSL_IN_CONTENT_LEN`), tests sur cible.
+- Sprint 3 : vérification de certificat (bundle CA en LittleFS), `ATGET https`,
+  réduction RAM (`MBEDTLS_SSL_IN_CONTENT_LEN`), test sur cible matérielle.
 - R&D SSH : étude wolfSSH vs shim socket (bloqué par `LWIP_SOCKET=0`).
