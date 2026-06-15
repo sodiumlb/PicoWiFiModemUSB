@@ -61,12 +61,17 @@
 void setup(void) {
    bool ok = true;
 
+#ifdef WOKWI_BUILD
+   // Wokwi has no USB host: skip the CDC bring-up and use the UART0 console.
+   stdio_init_all();
+#else
    tud_init(TUD_OPT_RHPORT);
    stdio_init_all();
    cdc_init();
    do{
       tud_task();
    }while(!tud_ready());
+#endif
 
    //gpio_init(DTR);
    //gpio_set_dir(DTR, INPUT);
@@ -107,6 +112,16 @@ void setup(void) {
    }
    sessionTelnetType = settings.telnet;
 
+#ifdef WOKWI_BUILD
+   // No NVRAM and no AT input channel in the sim: preconfigure for the virtual
+   // "Wokwi-GUEST" open network and a 115200 UART console (Wokwi default).
+   strncpy(settings.ssid, "Wokwi-GUEST", MAX_SSID_LEN);
+   settings.ssid[MAX_SSID_LEN] = '\0';
+   settings.wifiPassword[0] = '\0';
+   settings.serialSpeed = 115200;
+   printf("\r\nWOKWI variant: SSID=%s baud=%lu\r\n", settings.ssid, settings.serialSpeed);
+#endif
+
    ser_set_baudrate(ser0, settings.serialSpeed);
    ser_set_format(ser0, settings.dataBits, settings.stopBits, (ser_parity_t)settings.parity);
    ser_set_translate_crlf(ser0, false);
@@ -134,11 +149,20 @@ void setup(void) {
    cyw43_wifi_pm(&cyw43_state, CYW43_DEFAULT_PM & ~0xf);
    if( settings.ssid[0] ) {
       for( int i = 0; i < 4; ++i ) {
+#ifdef WOKWI_BUILD
+         cyw43_arch_wifi_connect_timeout_ms(settings.ssid, settings.wifiPassword, CYW43_AUTH_OPEN, 10000);
+#else
          cyw43_arch_wifi_connect_timeout_ms(settings.ssid, settings.wifiPassword, CYW43_AUTH_WPA2_AES_PSK, 10000);
+#endif
          if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ) {
             break;
          }
       }
+#ifdef WOKWI_BUILD
+      printf("WOKWI variant: WiFi link status = %d (%s)\r\n",
+             cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA),
+             cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ? "UP" : "not up");
+#endif
    }
 
    if( settings.listenPort ) {
@@ -184,8 +208,10 @@ void tud_umount_cb(void) {
 // =============================================================
 void loop(void) {
 
+#ifndef WOKWI_BUILD
    tud_task();
    cdc_task();
+#endif
 
    checkForIncomingCall();
 

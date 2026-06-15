@@ -28,16 +28,29 @@ project(${PROJECT_NAME})
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+# Wokwi test variant: the simulator provides no USB host, so the modem console
+# is routed to UART0 (ser_uart.c) instead of USB CDC (ser_cdc.c), and the boot
+# skips the USB-ready wait. Enable with -DWOKWI=1. Off => normal USB-CDC build.
+option(WOKWI "Wokwi test variant: UART console instead of USB CDC host" OFF)
+if(WOKWI)
+      set(SER_BACKEND ser_uart.c)
+else()
+      set(SER_BACKEND ser_cdc.c)
+endif()
+
 add_executable(${PROJECT_NAME}
       ${PROJECT_NAME}.cpp
-      #ser_uart.c
-      ser_cdc.c
+      ${SER_BACKEND}
       usb_cdc.c
       lfs.c
       usb_descriptors.c
       littlefs/lfs.c
       littlefs/lfs_util.c
       )
+
+if(WOKWI)
+      target_compile_definitions(${PROJECT_NAME} PRIVATE WOKWI_BUILD=1)
+endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
       CYW43_HOST_NAME=\"${CYW43_HOST_NAME}\"
       LFS_NO_MALLOC=1
