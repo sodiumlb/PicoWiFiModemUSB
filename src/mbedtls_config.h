@@ -21,6 +21,12 @@
 #define MBEDTLS_ENTROPY_HARDWARE_ALT
 
 #define MBEDTLS_SSL_OUT_CONTENT_LEN    2048
+/* RAM tuning (sprint 3): cap the TLS receive record at 8 KB instead of the 16 KB
+ * default — halves the largest per-session buffer. A server that emits a single
+ * record larger than 8 KB (rare; most fragment the certificate flight) would
+ * fail; raise this back toward 16384 if such a peer must be supported. TCP_WND
+ * in lwipopts.h is kept >= this value to avoid an RX stall. */
+#define MBEDTLS_SSL_IN_CONTENT_LEN     8192
 
 #define MBEDTLS_ALLOW_PRIVATE_ACCESS
 #define MBEDTLS_HAVE_TIME

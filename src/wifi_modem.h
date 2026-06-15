@@ -10,12 +10,13 @@
    #define ESC_CHAR              '+'
    #define ESC_COUNT             3
    #define GUARD_TIME            1000
-   #define MAGIC_NUMBER          0x5678
+   #define MAGIC_NUMBER          0x5679
    #define MAX_SSID_LEN          32
    #define MAX_WIFI_PWD_LEN      64
    #define DEFAULT_LISTEN_PORT   6400
    #define TELNET_PORT           23
    #define HTTP_PORT             80
+   #define HTTPS_PORT            443
    #define SPEED_DIAL_SLOTS      10
    #define MAGIC_ANSWER_RINGS    3
    #define MAX_ALIAS_LEN         16

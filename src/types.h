@@ -38,6 +38,7 @@
       bool          verbose;
       bool          quiet;
       DtrStates     dtrHandling;
+      bool          tlsVerify;     // verify the server certificate against the stored CA
    } SETTINGS_T;
    
    typedef struct TCP_CLIENT_T_ {

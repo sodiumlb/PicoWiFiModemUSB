@@ -28,11 +28,12 @@
 #define LWIP_ETHERNET               1
 #define LWIP_ICMP                   1
 #define LWIP_RAW                    1
-// TLS: a TLS record can be up to 16 KB, and altcp_tls stalls if the receive
-// window is smaller than the decryption buffer (MBEDTLS_SSL_IN_CONTENT_LEN).
-// 12*MSS = 17520 B keeps a full record (e.g. a CDN certificate chain) in flight.
+// TLS: altcp_tls stalls if the receive window is smaller than the decryption
+// buffer (MBEDTLS_SSL_IN_CONTENT_LEN). Sprint 3 capped that buffer at 8 KB, so
+// 6*MSS = 8760 B keeps a full record in flight while reclaiming RAM vs the
+// earlier 12*MSS. Keep TCP_WND >= MBEDTLS_SSL_IN_CONTENT_LEN.
 #define TCP_MSS                     1460
-#define TCP_WND                     (12 * TCP_MSS)
+#define TCP_WND                     (6 * TCP_MSS)
 #define TCP_SND_BUF                 (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
 #define LWIP_NETIF_STATUS_CALLBACK  1

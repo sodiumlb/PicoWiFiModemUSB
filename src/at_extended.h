@@ -32,6 +32,7 @@ char *factoryDefaults(char *atCmd) {
    settings.verbose = true;
    settings.quiet = false;
    settings.dtrHandling = DTR_IGNORE;
+   settings.tlsVerify = false;   // insecure by default; enable with AT$CV1 once a CA is stored
 
    strcpy(settings.alias[0], "particles");
    strcpy(settings.speedDial[0], "+particlesbbs.dyndns.org:6400");

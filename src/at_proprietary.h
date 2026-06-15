@@ -460,3 +460,59 @@ char *doStartupWait(char *atCmd) {
    }
    return atCmd;
 }
+
+//
+// AT$CV? query TLS certificate verification (0 = off/insecure, 1 = on)
+// AT$CV0 disable certificate verification (insecure: accept any server cert)
+// AT$CV1 enable certificate verification (requires a CA stored in LittleFS)
+//
+char *doCertVerify(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?':
+         ++atCmd;
+         printf("%u\r\n", settings.tlsVerify);
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '0':
+      case '1':
+         settings.tlsVerify = atCmd[0] == '1';
+         ++atCmd;
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
+
+//
+// AT$CA? report the stored TLS CA size in bytes (0 = none)
+// AT$CA- delete the stored CA (the CA itself is provisioned in the LittleFS image)
+//
+char *doCACert(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?':
+         ++atCmd;
+         printf("CA: %d bytes\r\n", caCertSize());
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '-':
+         ++atCmd;
+         deleteCACert();
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}

@@ -214,8 +214,28 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
       altcp_allocator_t allocator;
       if( secure ) {
          static struct altcp_tls_config *tlsConfig = NULL;
+         static bool tlsConfigVerify = false;
+         // Verify the server cert only when the user enabled it (AT$CV1) AND a CA
+         // is stored in LittleFS; otherwise stay in insecure mode (no CA).
+         bool wantVerify = settings.tlsVerify && hasCACert();
+         // Rebuild the shared config when the mode changes (CA added/removed or
+         // AT$CV toggled) so it carries — or drops — the CA chain.
+         if( tlsConfig && tlsConfigVerify != wantVerify ) {
+            altcp_tls_free_config(tlsConfig);
+            tlsConfig = NULL;
+         }
          if( !tlsConfig ) {
-            tlsConfig = altcp_tls_create_config_client(NULL, 0);
+            if( wantVerify ) {
+               static char caBuf[4096];
+               int caLen = readCACert(caBuf, sizeof(caBuf));
+               if( caLen > 0 ) {
+                  // mbedTLS PEM parsing requires the length to include the NUL.
+                  tlsConfig = altcp_tls_create_config_client((const u8_t *)caBuf, (size_t)caLen + 1);
+               }
+            } else {
+               tlsConfig = altcp_tls_create_config_client(NULL, 0);
+            }
+            tlsConfigVerify = wantVerify;
          }
          if( !tlsConfig ) {
             return NULL;
@@ -238,6 +258,13 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
       mbedtls_ssl_context *ssl = (mbedtls_ssl_context *)altcp_tls_context(client->pcb);
       if( ssl ) {
          mbedtls_ssl_set_hostname(ssl, host);
+         // Per-call auth mode: REQUIRED aborts the handshake on an untrusted
+         // cert (verify on + CA present), NONE accepts any peer (insecure).
+         if( ssl->conf ) {
+            mbedtls_ssl_conf_authmode((mbedtls_ssl_config *)ssl->conf,
+               (settings.tlsVerify && hasCACert()) ? MBEDTLS_SSL_VERIFY_REQUIRED
+                                                   : MBEDTLS_SSL_VERIFY_NONE);
+         }
       }
    }
 #endif

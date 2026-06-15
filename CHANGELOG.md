@@ -119,7 +119,40 @@ auraient aussi bloqué sur matériel réel.
   artefacts de l'émulateur, pas du firmware. La complétion `CONNECT` reste à
   confirmer sur **matériel réel**.
 
+### Sprint 3 — HTTPS, vérification de certificat (CA via LittleFS), tuning RAM
+
+**Ajouté — `ATGET https`**
+- `src/at_basic.h` : `httpGet()` détecte le schéma `https://` (port 443 par
+  défaut, dial TLS) en plus de `http://` ; parsing host/port/chemin robuste.
+- `src/wifi_modem.h` : `HTTPS_PORT 443`.
+
+**Ajouté — vérification de certificat (CA via LittleFS + commandes AT)**
+- `src/types.h` : `SETTINGS_T.tlsVerify` ; `MAGIC_NUMBER` 0x5678→0x5679 (la
+  taille de la struct change → re-`factoryDefaults` au boot). Défaut : `false`.
+- `src/lfs.c` / `lfs.h` : CA stocké en fichier LittleFS `ca.pem`
+  (`hasCACert`, `readCACert`, `writeCACert`, `deleteCACert`, `caCertSize`). Le CA
+  est provisionné hors-bande dans l'image LittleFS (pas de saisie AT multi-ligne).
+- `src/tcp_support.h` : `tcpConnect` vérifie le certificat quand
+  `tlsVerify && hasCACert()` — config client créée avec le CA et
+  `MBEDTLS_SSL_VERIFY_REQUIRED` ; sinon `NULL`/`VERIFY_NONE` (insecure). La config
+  partagée est reconstruite quand le mode change ; l'authmode est aussi forcé par
+  appel sur le contexte SSL.
+- `src/at_proprietary.h` + `wifi_modem.cpp` : commandes `AT$CV?/0/1` (activer la
+  vérif) et `AT$CA?/-` (taille du CA / suppression).
+
+**Ajouté — tuning RAM d'une session TLS**
+- `src/mbedtls_config.h` : `MBEDTLS_SSL_IN_CONTENT_LEN 8192` (record d'entrée
+  plafonné à 8 Ko au lieu de 16 Ko ; un pair émettant un record > 8 Ko échouerait).
+- `src/lwipopts.h` : `TCP_WND` 12*MSS → 6*MSS (≥ buffer de déchiffrement), RAM
+  récupérée côté lwIP.
+
+**Validation**
+- ✅ Build prod + variant Wokwi OK. uf2 prod ~990 Ko ; bss ~126 Ko / 264 Ko
+  (laisse ~135 Ko pour heap + pile + session TLS).
+- ⚠️ **Runtime non testé** (Wokwi trop lent pour compléter un handshake, pas de
+  matériel). La vérification de certificat reste à valider sur cible réelle.
+
 ### À venir
-- Sprint 3 : vérification de certificat (bundle CA en LittleFS), `ATGET https`,
-  réduction RAM (`MBEDTLS_SSL_IN_CONTENT_LEN`), test sur cible matérielle.
+- Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
+  vérification CA stricte, et l'`ATGET https`.
 - R&D SSH : étude wolfSSH vs shim socket (bloqué par `LWIP_SOCKET=0`).

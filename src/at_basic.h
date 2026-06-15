@@ -239,31 +239,39 @@ char *doEcho(char *atCmd) {
 }
 
 //
-// ATGEThttp://host[/path]: fetch a web page
-//
-// NOTE: http only: no https support
+// ATGEThttp://host[:port][/path]  — fetch a web page (plain HTTP)
+// ATGEThttps://host[:port][/path] — fetch over TLS (terminated by the modem)
 //
 char *httpGet(char *atCmd) {
-   char *host, *path, *port;
+   char *host, *path, *port, *scheme;
    int portNum;
-   port = strrchr(atCmd, ':');
-   host = strstr(atCmd, "http://");
-   if( !port || port == host + 4) {
+   bool secure = false;
+
+   // Scheme selects transport and default port. https:// is checked first
+   // because "http://" is a substring-prefix concern only the other way round.
+   if( (scheme = strstr(atCmd, "https://")) != NULL ) {
+      secure = true;
+      host = scheme + 8;
+      portNum = HTTPS_PORT;
+   } else if( (scheme = strstr(atCmd, "http://")) != NULL ) {
+      host = scheme + 7;
       portNum = HTTP_PORT;
    } else {
-      portNum = atoi(port + 1);
-      *port = NUL;
-   }
-   if( !host ) {
       sendResult(R_ERROR);
       return atCmd;
-   } else {
-      host += 7; // skip over http://
-      path = strchr(host, '/');
    }
+
+   // Split host[:port][/path]: cut the path first, then the optional port,
+   // so a ':' in the port and a '/' in the path don't interfere.
+   path = strchr(host, '/');
    if( path ) {
       *path = NUL;
       ++path;
+   }
+   port = strchr(host, ':');
+   if( port ) {
+      portNum = atoi(port + 1);
+      *port = NUL;
    }
 #if DEBUG
    printf("Getting path /");
@@ -272,8 +280,8 @@ char *httpGet(char *atCmd) {
    }
    printf(" from port %u of host %s...\r\n", portNum, host);
 #endif
-   // Establish connection (plain HTTP; https is a later sprint)
-   tcpClient = tcpConnect(&tcpClient0, host, portNum, false);
+   // Establish connection (TLS-terminated when the URL scheme is https)
+   tcpClient = tcpConnect(&tcpClient0, host, portNum, secure);
    if( !tcpClient ) {
       sendResult(R_NO_CARRIER);
       ser_set(DCD, !ACTIVE);
