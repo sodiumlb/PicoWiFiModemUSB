@@ -178,6 +178,22 @@ restait muet sur `/dev/ttyACM0` : aucune réponse AT, et l'écriture hôte
   `AT$CV?`→`0`, `AT$CA?`→`CA: 0 bytes`. Dialogue stable (866 o sur 40 s).
   **Première validation runtime réelle de la pile (TLS incluse) sur cible.**
 
+### Ajout — chargement d'un CA par série (`AT$CA=`)
+
+La vérification de certificat (`AT$CV1`) exige un CA en LittleFS, mais aucune
+commande ne permettait d'en provisionner un (`writeCACert()` existait sans être
+câblée). Ajout de la commande d'upload.
+
+**Ajouté**
+- `src/at_proprietary.h` : `doCACert()` gère `AT$CA=` — lit un certificat PEM
+  depuis le port jusqu'à une ligne ne contenant que `.`, puis le stocke via
+  `writeCACert()`. La pile USB (`tud_task()`/`cdc_task()`) est pompée pendant la
+  lecture bloquante (même raison que le correctif `startupWait`).
+
+**Validation**
+- ✅ Sur matériel : `AT$CA=` (ISRG Root X1) → `CA stored: 1939 bytes`,
+  `AT$CA?` → `1939 bytes`.
+
 ### À venir
 - Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
   vérification CA stricte, et l'`ATGET https`.
