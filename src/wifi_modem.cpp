@@ -132,6 +132,12 @@ void setup(void) {
 
    if( settings.startupWait ) {
       while( true ) {            // wait for a CR
+#ifndef WOKWI_BUILD
+         // Keep the USB stack alive while waiting, otherwise the CDC endpoint
+         // is never serviced and the CR can never be received (deadlock).
+         tud_task();
+         cdc_task();
+#endif
          if( ser_is_readable(ser0) ) {
             if( ser_getc(ser0) == CR ) {
                break;

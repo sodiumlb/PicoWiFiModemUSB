@@ -152,6 +152,32 @@ auraient aussi bloqué sur matériel réel.
 - ⚠️ **Runtime non testé** (Wokwi trop lent pour compléter un handshake, pas de
   matériel). La vérification de certificat reste à valider sur cible réelle.
 
+### Correctif — deadlock USB CDC au démarrage (`startupWait`)
+
+Premier test sur **cible matérielle réelle** (Pico W, USB CDC). Le firmware
+restait muet sur `/dev/ttyACM0` : aucune réponse AT, et l'écriture hôte
+(`tcdrain`) bloquait — symptôme d'un `tud_task()` qui ne tourne jamais.
+
+**Cause**
+- `src/wifi_modem.cpp`, boucle d'attente du CR quand `settings.startupWait` est
+  vrai (`while(true)`) : elle interrogeait le CDC via `ser_is_readable()`/
+  `ser_getc()` **sans jamais appeler `tud_task()`**. La pile TinyUSB n'étant plus
+  pompée, l'endpoint OUT n'est jamais traité → le CR ne peut jamais être reçu →
+  deadlock total (USB figé, ni RX ni TX applicatifs). Déclenché par un
+  `startupWait=true` hérité de la config persistante LittleFS (non effacée par un
+  reflash `.uf2`).
+
+**Modifié**
+- `src/wifi_modem.cpp` : la boucle `startupWait` appelle désormais `tud_task()` et
+  `cdc_task()` à chaque itération (gardé par `#ifndef WOKWI_BUILD`), comme la
+  boucle principale `loop()`.
+
+**Validation**
+- ✅ Build prod OK ; flashé sur Pico W (`cafe:4001`, `/dev/ttyACM0`).
+- ✅ Runtime confirmé sur matériel : `AT`→`OK`, `ATI` (infos réseau complètes),
+  `AT$CV?`→`0`, `AT$CA?`→`CA: 0 bytes`. Dialogue stable (866 o sur 40 s).
+  **Première validation runtime réelle de la pile (TLS incluse) sur cible.**
+
 ### À venir
 - Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
   vérification CA stricte, et l'`ATGET https`.
