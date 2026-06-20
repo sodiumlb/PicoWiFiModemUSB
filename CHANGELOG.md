@@ -194,6 +194,31 @@ câblée). Ajout de la commande d'upload.
 - ✅ Sur matériel : `AT$CA=` (ISRG Root X1) → `CA stored: 1939 bytes`,
   `AT$CA?` → `1939 bytes`.
 
+### Correctif — vérification de certificat inopérante (`MBEDTLS_PEM_PARSE_C` manquant)
+
+Premier test matériel de `AT$CV1` : **toute** connexion en mode vérification
+échouait (`NO CARRIER`), y compris vers des sites parfaitement valides.
+
+**Cause**
+- `src/mbedtls_config.h` n'activait pas `MBEDTLS_PEM_PARSE_C` :
+  `mbedtls_x509_crt_parse()` n'accepte alors que du DER. Les certificats reçus
+  du serveur pendant le handshake sont en DER (donc `AT$CV0` fonctionnait), mais
+  le CA local chargé via `AT$CA=` est en **PEM** → son parsing échouait →
+  `altcp_tls_create_config_client()` renvoyait `NULL` → `tcpConnect()` renvoyait
+  `NULL` → `NO CARRIER` pour toute connexion sécurisée. La vérification ne
+  rejetait donc rien : la config TLS ne se créait simplement jamais.
+
+**Modifié**
+- `src/mbedtls_config.h` : `#define MBEDTLS_PEM_PARSE_C` + `MBEDTLS_BASE64_C`
+  (dépendance). uf2 990 Ko → 994 Ko.
+
+**Validation** (matériel, CA = ISRG Root X1, `AT$CV1`)
+- ✅ `www.badssl.com`, `sha256.badssl.com`, `badssl.com` (apex, couvert par le
+  SAN) → **CONNECT**.
+- ✅ `wrong.host.badssl.com` (hors wildcard) → **refusé** (hostname).
+- ✅ `expired` / `self-signed` / `untrusted-root.badssl.com` → **refusés**.
+- Première validation matérielle complète de la vérification de certificat.
+
 ### À venir
 - Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
   vérification CA stricte, et l'`ATGET https`.

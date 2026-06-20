@@ -64,6 +64,13 @@
 #define MBEDTLS_SSL_TLS_C
 #define MBEDTLS_X509_CRT_PARSE_C
 #define MBEDTLS_X509_USE_C
+/* PEM parsing of the user-provided CA (AT$CA=). Without these, mbedtls_x509_crt_parse
+ * only accepts DER, so a PEM CA fails to load and certificate verification (AT$CV1)
+ * never creates a TLS config (every secure dial returns NO CARRIER). BASE64_C is a
+ * hard dependency of PEM_PARSE_C. (Server-sent handshake certs are DER, hence CV0
+ * worked without this.) */
+#define MBEDTLS_BASE64_C
+#define MBEDTLS_PEM_PARSE_C
 #define MBEDTLS_AES_FEWER_TABLES
 
 /* TLS 1.2 */
