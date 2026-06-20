@@ -1,5 +1,7 @@
 # Pico WiFi USB modem
 
+[![Latest release](https://img.shields.io/github/v/release/benedictemarty/PicoWiFiModemUSB?label=release)](https://github.com/benedictemarty/PicoWiFiModemUSB/releases/latest)
+
 ## A Pico W based USB CDC \<-\> WiFi modem with Hayes AT style commands and a LED indicator
 
 This project is based on the great [Pico WiFi modem](https://github.com/mecparts/PicoWiFiModem), 
