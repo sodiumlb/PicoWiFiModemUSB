@@ -20,6 +20,7 @@ custom hardware is required: a bare Pico W is enough.
 
 - [Project lineage](#project-lineage)
 - [Features](#features)
+- [Architecture](#architecture)
 - [Installation](#installation)
 - [First-time setup](#first-time-setup)
 - [TLS / HTTPS](#tls--https)
@@ -40,6 +41,16 @@ Direct ancestry (this fork is at the bottom):
 3. [sodiumlb/PicoWiFiModemUSB](https://github.com/sodiumlb/PicoWiFiModemUSB) — **direct parent**: native USB-CDC variant for the Pico W, designed to pair with [LOCI](https://github.com/sodiumlb/loci-hardware).
 4. **this fork** ([benedictemarty/PicoWiFiModemUSB](https://github.com/benedictemarty/PicoWiFiModemUSB)) — adds TLS/SSL termination (mbedTLS) and the `ATGET https`, `AT$CA` and `AT$CV` commands.
 
+```
+jsalin/esp8266_modem
+        │
+mecparts/RetroWiFiModem ──▶ mecparts/PicoWiFiModem
+                                     │
+                          sodiumlb/PicoWiFiModemUSB        (USB-CDC, Pico W, LOCI)
+                                     │
+                  benedictemarty/PicoWiFiModemUSB  ◀── this fork  (+ TLS/SSL)
+```
+
 Other influences (ESP8266 virtual modems by Stardot and Roland Juno, WiFi232,
 etc.) are listed under [References](#references).
 
@@ -54,6 +65,29 @@ etc.) are listed under [References](#references).
   (`AT$CA=`) — refused unless a CA is present, so it never fails open.
 - On-board flash storage via **LittleFS** (settings + CA), in the area not used
   by the firmware.
+
+## Architecture
+
+The Pico W acts as a modem **and** as the TLS endpoint. The host computer never
+sees encrypted traffic: TLS is set up, verified and torn down inside the dongle,
+so even an 8-bit machine can reach HTTPS services.
+
+```
+   Oric 8-bit            LOCI               Pico W modem              Internet
+ ┌────────────┐  bus   ┌────────┐ USB CDC ┌────────────────┐  WiFi  ┌──────────┐
+ │  host /    │◀──────▶│  LOCI  │◀───────▶│ PicoWiFiModemUSB│◀──────▶│  server  │
+ │  software  │        │        │ serial  │   + mbedTLS     │  TLS   │ (HTTPS…) │
+ └────────────┘        └────────┘         └────────────────┘        └──────────┘
+                       └─ cleartext serial ─┘ └──── TLS terminated here ────┘
+```
+
+**Role of LOCI** — [LOCI](https://github.com/sodiumlb/loci-hardware) is the
+USB host interface for Oric 8-bit computers. It carries the plain AT-command /
+data serial stream between the host and the modem over USB. LOCI is
+**transparent with respect to TLS**: it only ever handles already-decrypted
+bytes, so adding HTTPS support required **no change on the LOCI side** — all the
+crypto lives in this firmware. (Any USB-CDC capable host works the same way;
+LOCI is simply the Oric-oriented one.)
 
 ## Installation
 
