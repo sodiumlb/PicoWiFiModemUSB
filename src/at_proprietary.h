@@ -464,7 +464,7 @@ char *doStartupWait(char *atCmd) {
 //
 // AT$CV? query TLS certificate verification (0 = off/insecure, 1 = on)
 // AT$CV0 disable certificate verification (insecure: accept any server cert)
-// AT$CV1 enable certificate verification (requires a CA stored in LittleFS)
+// AT$CV1 enable certificate verification (ERROR if no CA stored in LittleFS)
 //
 char *doCertVerify(char *atCmd) {
    switch( atCmd[0] ) {
@@ -476,11 +476,24 @@ char *doCertVerify(char *atCmd) {
          }
          break;
       case '0':
-      case '1':
-         settings.tlsVerify = atCmd[0] == '1';
+         settings.tlsVerify = false;
          ++atCmd;
          if( !atCmd[0] ) {
             sendResult(R_OK);
+         }
+         break;
+      case '1':
+         ++atCmd;
+         // Refuse to enable verification without a stored CA: otherwise it would
+         // be silently insecure (no CA => VERIFY_NONE accepts any cert), giving a
+         // false sense of security. Load a CA first with AT$CA=.
+         if( !hasCACert() ) {
+            sendResult(R_ERROR);
+         } else {
+            settings.tlsVerify = true;
+            if( !atCmd[0] ) {
+               sendResult(R_OK);
+            }
          }
          break;
       default:
@@ -547,6 +560,13 @@ char *doCACert(char *atCmd) {
          }
          break;
       }
+      case '-':
+         ++atCmd;
+         deleteCACert();
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
       default:
          sendResult(R_ERROR);
          break;

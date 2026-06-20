@@ -236,6 +236,24 @@ toute la tentative de connexion (écriture hôte en timeout).
   systématique), progression `......` reçue en temps réel, connexion OK. Le
   timeout résiduel unique vient de `cyw43_arch_wifi_connect_async()` (hors boucle).
 
+### Durcissement — `AT$CV1` refusé sans CA + restauration de `AT$CA-`
+
+**Modifié**
+- `src/at_proprietary.h`, `doCertVerify()` : `AT$CV1` renvoie désormais `ERROR`
+  (et n'active pas `tlsVerify`) tant qu'aucun CA n'est stocké. Sans CA, la
+  vérification retombait silencieusement en `VERIFY_NONE` (tout cert accepté) :
+  un faux sentiment de sécurité. `AT$CV0` reste accepté en toute circonstance.
+
+**Correctif (régression)**
+- `src/at_proprietary.h`, `doCACert()` : restauration du `case '-'` (suppression
+  du CA), supprimé par mégarde lors de l'ajout de `AT$CA=`. `AT$CA-` retombait
+  dans `default` → `ERROR` et ne supprimait rien.
+
+**Validation** (matériel)
+- ✅ `AT$CA-` → `OK`, `AT$CA?` → `0 bytes`.
+- ✅ `AT$CV1` sans CA → `ERROR`, `AT$CV?` → `0`.
+- ✅ Après rechargement du CA : `AT$CV1` → `OK`, `AT$CV?` → `1`.
+
 ### À venir
 - Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
   vérification CA stricte, et l'`ATGET https`.
