@@ -219,6 +219,23 @@ Premier test matériel de `AT$CV1` : **toute** connexion en mode vérification
 - ✅ `expired` / `self-signed` / `untrusted-root.badssl.com` → **refusés**.
 - Première validation matérielle complète de la vérification de certificat.
 
+### Correctif — CDC figé pendant la connexion WiFi (`ATC1`)
+
+Même classe de bug que `startupWait` : la boucle d'attente de `ATC1` bloquait sur
+`sleep_ms(500)` (jusqu'à 25 s) sans pomper la pile USB → le CDC gelait pendant
+toute la tentative de connexion (écriture hôte en timeout).
+
+**Modifié**
+- `src/at_basic.h` : `wifiConnection()` — le `sleep_ms(500)` de la boucle d'attente
+  est remplacé (hors `WOKWI_BUILD`) par une attente active de 500 ms qui appelle
+  `tud_task()`/`cdc_task()`, gardant le CDC vivant. `sleep_ms()` conservé pour la
+  variante Wokwi (UART, pas de CDC).
+
+**Validation** (matériel)
+- ✅ Pendant `ATC1` : 26/27 écritures hôte passent (auparavant : timeout
+  systématique), progression `......` reçue en temps réel, connexion OK. Le
+  timeout résiduel unique vient de `cyw43_arch_wifi_connect_async()` (hors boucle).
+
 ### À venir
 - Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
   vérification CA stricte, et l'`ATGET https`.
