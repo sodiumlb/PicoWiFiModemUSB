@@ -3,6 +3,7 @@
 #include "usb_cdc.h"
 #include "pico/stdio/driver.h"
 #include "pico/cyw43_arch.h"
+#include "pico/bootrom.h"
 
 extern volatile bool dtrWentInactive;
 static bool cdc_led;
@@ -93,5 +94,15 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts){
         //tud_cdc_n_write(0,"#",1);
     */
     dtrWentInactive = !dtr;
+}
+
+// 1200-baud touch: a host opening the port at 1200 bps reboots the Pico into
+// BOOTSEL (USB mass-storage) so new firmware can be flashed without pressing
+// the physical button. Standard Arduino/Pico convention.
+void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding){
+    (void)itf;
+    if( p_line_coding->bit_rate == 1200 ){
+        reset_usb_boot(0, 0);
+    }
 }
 
