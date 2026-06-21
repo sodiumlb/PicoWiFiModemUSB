@@ -137,8 +137,10 @@ void setup(void) {
    // arrival of serial data
    cyw43_wifi_pm(&cyw43_state, CYW43_DEFAULT_PM & ~0xf);
    if( settings.ssid[0] ) {
+      // Empty password => open network (no auth); otherwise WPA2.
+      uint32_t authMode = settings.wifiPassword[0] ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN;
       for( int i = 0; i < 4; ++i ) {
-         cyw43_arch_wifi_connect_timeout_ms(settings.ssid, settings.wifiPassword, CYW43_AUTH_WPA2_AES_PSK, 10000);
+         cyw43_arch_wifi_connect_timeout_ms(settings.ssid, settings.wifiPassword, authMode, 10000);
          if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ) {
             break;
          }
@@ -298,6 +300,9 @@ void doAtCmds(char *atCmd) {
                } else if( !strncasecmp(atCmd, "$SU", 3) ) {
                   // query/set serial data configuration
                   atCmd = doDataConfig(atCmd + 3);
+               } else if( !strncasecmp(atCmd, "$SCAN", 5) ) {
+                  // scan for nearby WiFi networks
+                  atCmd = doScan(atCmd + 5);
                } else if( !strncasecmp(atCmd, "$SSID", 5) ) {
                   // query/set WiFi SSID
                   atCmd = doSSID(atCmd + 5);
