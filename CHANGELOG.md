@@ -254,7 +254,133 @@ toute la tentative de connexion (écriture hôte en timeout).
 - ✅ `AT$CV1` sans CA → `ERROR`, `AT$CV?` → `0`.
 - ✅ Après rechargement du CA : `AT$CV1` → `OK`, `AT$CV?` → `1`.
 
+### Ajout — `AT$SCAN` : scan des réseaux WiFi
+
+Pour permettre la **configuration du WiFi depuis l'Oric** (menu de réseaux plutôt
+que saisie aveugle du SSID), ajout d'une commande de scan absente du firmware
+amont.
+
+**Ajouté**
+- `src/at_proprietary.h` : `doScan()` — déclenche `cyw43_wifi_scan()`, collecte les
+  résultats via callback (dédup par SSID en gardant le meilleur RSSI, SSID cachés
+  ignorés, max 24 AP), puis imprime **un AP par ligne** au format `<index> <ssid>`
+  (1-based), terminé par `OK` (`ERROR` si le scan échoue). Attente active de fin de
+  scan via `cyw43_wifi_scan_active()` (timeout 15 s). Format volontairement trivial
+  à parser côté Oric (entier de tête = choix, reste = SSID à renvoyer en `AT$SSID=`).
+- `src/wifi_modem.cpp` : branche de dispatch `$SCAN` (placée avant `$SSID` ;
+  `strncasecmp` sur 5 → pas de collision avec `$SSID`/`$SB`/`$SU`/`$SP`).
+
+**But applicatif**
+- Programme Oric de référence (via LOCI, ACIA `$0380`) : `../oric/wificonf.bas`
+  (scan → menu numéroté → choix → mot de passe → `ATC1` → `AT&W`) et core assembleur
+  `../oric/serialcore.asm`.
+
+**Validation**
+- ✅ Build prod OK (`cmake --build src/build`), `wifi_modem.uf2` ~996 Ko, sans warning.
+- ✅ **Runtime validé sur Pico W** (après le correctif de famine CDC ci-dessous) :
+  `AT$SCAN` renvoie en ~1,5 s la liste numérotée des réseaux réels, dédupliquée,
+  terminée par `OK` (ex. `1 AlterOP New`, `2 Livebox-E380`, …). Format consommé tel
+  quel par `../oric/wificonf.bas`.
+
+### Correctif — `AT$SCAN` muet (famine CDC) + reflash logiciel (1200-baud touch)
+
+Premier test matériel d'`AT$SCAN` : la commande était **échouée silencieusement**
+(echo de la commande, puis ni liste ni `OK`), alors que le modem restait répondant
+après coup.
+
+**Cause**
+- `src/at_proprietary.h`, `doScan()` : la boucle d'attente de fin de scan faisait
+  `sleep_ms(50)` **sans pomper `tud_task()`/`cdc_task()`** → le CDC USB gelait
+  pendant tout le scan, et la liste/`OK` ne partaient jamais. Même classe de bug que
+  les correctifs `startupWait` et `ATC1`.
+
+**Modifié**
+- `src/at_proprietary.h` : la boucle d'attente (`cyw43_wifi_scan_active`) pompe
+  désormais `tud_task()`/`cdc_task()` (gardé par `#ifndef WOKWI_BUILD`,
+  `sleep_ms` conservé pour Wokwi). Pompage aussi **entre chaque ligne imprimée**
+  pour qu'une longue liste ne soit pas tronquée par un buffer TX plein.
+
+**Ajouté — reflash sans bouton (1200-baud touch)**
+- `src/usb_cdc.c` : `tud_cdc_line_coding_cb()` implémenté — ouvrir le port à
+  **1200 bauds** appelle `reset_usb_boot(0,0)` → le Pico redémarre en BOOTSEL
+  (volume `RPI-RP2`) sans appui physique. Permet de reflasher par logiciel
+  (`include "pico/bootrom.h"`).
+
+**Validation** (matériel)
+- ✅ Build prod OK (`wifi_modem.uf2` ~997 Ko).
+- ✅ `AT$SCAN` renvoie désormais la liste complète + `OK` (~1,5 s) — le CDC reste
+  vivant pendant le scan.
+- ✅ **1200-baud touch** confirmé : ouvrir `/dev/ttyACM0` à 1200 bauds fait apparaître
+  le volume `RPI-RP2` sans appui bouton. Boucle de reflash 100 % logicielle validée
+  de bout en bout (touch → BOOTSEL → copie uf2 → reboot → `AT$SCAN` re-OK).
+
+### Ajout — flag de sécurité dans `AT$SCAN` (ouvert / sécurisé)
+
+Pour que l'utilisateur Oric voie d'un coup d'œil quels réseaux sont **ouverts**.
+
+**Modifié**
+- `src/at_proprietary.h` (`doScan`) : chaque ligne devient `<index> <ssid><TAB><sec>`
+  avec `<sec>` = `O` (ouvert, `result->auth_mode == 0`) ou `S` (sécurisé). Le
+  séparateur **TAB** est rétro-compatible (un hôte ignorant la fin de ligne marche
+  encore). Tableau `scanOpen[]` rempli dans le callback de scan.
+
+**Validation** (matériel)
+- ✅ Build OK, reflashé via 1200-touch. `AT$SCAN` →
+  `1 Freebox-C31EBC\tS`, `2 AlterOP New\tS`, … `OK` (réseaux environnants tous
+  sécurisés ⇒ `S` ; un AP ouvert donnerait `O`).
+- Programme Oric `../oric/wificonf.bas` mis à jour : affiche « (OUVERT) » et **saute la
+  saisie du mot de passe** pour un réseau ouvert.
+
+### Ajout — réseaux WiFi ouverts (mot de passe vide)
+
+`ATC1` exigeait un mot de passe non vide et forçait `CYW43_AUTH_WPA2_AES_PSK` ;
+la connexion au boot forçait WPA2 aussi en prod. Conséquence : impossible de se
+connecter à un **réseau ouvert** (sans mot de passe). Le programme Oric de config
+(`../oric/wificonf.bas`) tombait sur `ERROR` dès qu'on laissait le mot de passe vide.
+
+**Modifié**
+- `src/at_basic.h` (`wifiConnection`) : `ATC1` n'exige plus que le SSID ;
+  `authMode = settings.wifiPassword[0] ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN`.
+  Message d'erreur ajusté ("Configure SSID.").
+- `src/wifi_modem.cpp` (connexion au boot) : même logique `authMode` — unifie prod et
+  variant Wokwi (le SSID `Wokwi-GUEST` a un mot de passe vide ⇒ OPEN, ce qui est
+  correct ; le `#ifdef WOKWI_BUILD` qui forçait OPEN est supprimé).
+
+**Validation**
+- ✅ Build OK (`wifi_modem.uf2` ~997 Ko), reflashé via 1200-touch.
+- ✅ **Non-régression WPA2** : reconnexion automatique à "AlterOP New" (mot de passe
+  présent ⇒ WPA2) confirmée par `ATI`.
+- ⏳ Chemin OPEN vérifié par revue de code ; test runtime complet nécessite un AP
+  ouvert (non disponible ici — ne pas effacer le mot de passe du réseau courant).
+
+### Correctif CRITIQUE — `AT&W` figeait le firmware (écriture flash sans IRQ désactivées)
+
+Symptôme remonté en test réel : `AT&W` (sauvegarde NVRAM) **ne renvoyait pas `OK`** et
+**gelait** le firmware (CDC mort, plus aucune réponse ; le 1200-touch lui-même ne
+fonctionnait plus → **reset physique obligatoire**). Apparaissait surtout **juste après
+un `ATC1`** réussi (WiFi actif).
+
+**Cause**
+- `src/lfs.c` : `lfs_prog()`/`lfs_erase()` appelaient `flash_range_program()` /
+  `flash_range_erase()` **sans désactiver les interruptions**. Pendant une opération
+  flash, le **XIP est indisponible** ; si une **IRQ cyw43** (servie en contexte
+  interruption par `pico_cyw43_arch_lwip_threadsafe_background`, donc WiFi actif) est
+  exécutée **depuis la flash** à ce moment-là → **hard fault** → gel total.
+
+**Modifié**
+- `src/lfs.c` : `#include "hardware/sync.h"` ; les 3 opérations flash (`lfs_prog`,
+  `lfs_erase`, et l'effacement) sont encadrées par
+  `save_and_disable_interrupts()` / `restore_interrupts()`.
+
+**Validation** (matériel)
+- ✅ Build OK (`wifi_modem.uf2` ~997 Ko).
+- ✅ **Confirmé sur Pico W** : avec WiFi connecté (cyw43 actif), `AT&W` → `OK`
+  immédiat, **sans gel** ; le modem reste vivant après (`AT` → `OK`). Avant le
+  correctif : `AT&W` figeait le firmware (CDC mort, reset physique requis).
+- Récupération du Pico figé : power cycle complet (débrancher ~5 s) → firmware
+  ré-éveillé → 1200-touch → flash du correctif.
+
 ### À venir
 - Test sur cible matérielle (Pico W + LOCI) : confirmer le `CONNECT` TLS, la
-  vérification CA stricte, et l'`ATGET https`.
+  vérification CA stricte, l'`ATGET https`, et `AT$SCAN`.
 - R&D SSH : étude wolfSSH vs shim socket (bloqué par `LWIP_SOCKET=0`).

@@ -1,5 +1,6 @@
 
 #include "hardware/flash.h"
+#include "hardware/sync.h"
 #include "littlefs/lfs.h"
 #include "pico/printf.h"
 #include "lfs.h"
@@ -40,7 +41,12 @@ static int lfs_prog(const struct lfs_config *c, lfs_block_t block,
     uint32_t flash_offs = (PICO_FLASH_SIZE_BYTES - LFS_DISK_SIZE) +
                           (block * FLASH_SECTOR_SIZE) +
                           off;
+    // Disable interrupts during the flash op: while flash is being programmed
+    // XIP is unavailable, so any ISR executing from flash (e.g. the cyw43
+    // background WiFi IRQ) would hang the chip. See AT&W deadlock.
+    uint32_t ints = save_and_disable_interrupts();
     flash_range_program(flash_offs, (const uint8_t*)buffer, size);
+    restore_interrupts(ints);
     return LFS_ERR_OK;
 }
 
@@ -49,7 +55,9 @@ static int lfs_erase(const struct lfs_config *c, lfs_block_t block)
     (void)(c);
     uint32_t flash_offs = (PICO_FLASH_SIZE_BYTES - LFS_DISK_SIZE) +
                           (block * FLASH_SECTOR_SIZE);
+    uint32_t ints = save_and_disable_interrupts();   // see lfs_prog note
     flash_range_erase(flash_offs, FLASH_SECTOR_SIZE);
+    restore_interrupts(ints);
     return LFS_ERR_OK;
 }
 

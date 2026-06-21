@@ -244,6 +244,74 @@ char *doSSID(char *atCmd) {
 }
 
 //
+// AT$SCAN scan for nearby WiFi networks (2.4 GHz)
+//
+// Lists one access point per line as "<index> <ssid><TAB><sec>", de-duplicated
+// by SSID (keeping the strongest signal) and terminated by OK. <sec> is a
+// single char: 'O' = open (no password), 'S' = secured. The TAB separator keeps
+// it backward-compatible: a host that ignores everything after the SSID still
+// works. The index is 1-based so a host program can present a numbered menu and
+// feed the chosen SSID back via AT$SSID=. Hidden (empty-SSID) networks skipped.
+//
+#define SCAN_MAX_APS 24
+
+static char    scanList[SCAN_MAX_APS][MAX_SSID_LEN + 1];
+static int16_t scanRssi[SCAN_MAX_APS];
+static bool    scanOpen[SCAN_MAX_APS];   // true = open network (auth_mode 0)
+static int     scanNum;
+
+static int scanResult(void *env, const cyw43_ev_scan_result_t *result) {
+   (void)env;
+   if( result && result->ssid_len > 0 && scanNum < SCAN_MAX_APS ) {
+      char ssid[MAX_SSID_LEN + 1];
+      int n = result->ssid_len > MAX_SSID_LEN ? MAX_SSID_LEN : result->ssid_len;
+      memcpy(ssid, result->ssid, n);
+      ssid[n] = NUL;
+      for( int i = 0; i < scanNum; ++i ) {      // de-duplicate by SSID
+         if( !strcmp(scanList[i], ssid) ) {
+            if( result->rssi > scanRssi[i] ) scanRssi[i] = result->rssi;
+            return 0;
+         }
+      }
+      strcpy(scanList[scanNum], ssid);
+      scanRssi[scanNum] = result->rssi;
+      scanOpen[scanNum] = (result->auth_mode == 0);   // 0 = open
+      ++scanNum;
+   }
+   return 0;
+}
+
+char *doScan(char *atCmd) {
+   cyw43_wifi_scan_options_t opts;
+   memset(&opts, 0, sizeof opts);
+   scanNum = 0;
+   if( cyw43_wifi_scan(&cyw43_state, &opts, NULL, scanResult) != 0 ) {
+      sendResult(R_ERROR);
+      return atCmd;
+   }
+   absolute_time_t deadline = make_timeout_time_ms(15000);
+   while( cyw43_wifi_scan_active(&cyw43_state) && !time_reached(deadline) ) {
+#ifndef WOKWI_BUILD
+      // Keep the USB CDC alive during the scan wait, otherwise output is
+      // frozen for the whole scan (same deadlock class as the ATC1 fix).
+      tud_task();
+      cdc_task();
+#else
+      sleep_ms(20);
+#endif
+   }
+   for( int i = 0; i < scanNum; ++i ) {
+      printf("%d %s\t%c\r\n", i + 1, scanList[i], scanOpen[i] ? 'O' : 'S');
+#ifndef WOKWI_BUILD
+      tud_task();   // drain TX between lines so a long list isn't truncated
+      cdc_task();
+#endif
+   }
+   sendResult(R_OK);
+   return atCmd;
+}
+
+//
 // AT$SU? query data configuration
 // AT$SU=nps set data configuration
 //       n=7/8   data bits

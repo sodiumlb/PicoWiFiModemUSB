@@ -104,6 +104,11 @@ Connect with any serial terminal (`picocom -b 115200 /dev/ttyACM0`,
 `minicom`, PuTTY…). USB CDC ignores the actual baud rate, but the AT-level
 `AT$SB` speed must match your terminal for UART-style setups.
 
+> **Reflashing without the BOOTSEL button (1200-baud touch).** Opening the serial
+> port at **1200 baud** reboots the Pico straight into BOOTSEL (`RPI-RP2`), so you
+> can drop a new `.uf2` without unplugging. E.g. `stty -F /dev/ttyACM0 1200` (or any
+> terminal opened at 1200 bps), then copy the firmware to the mounted drive.
+
 ## First-time setup
 
 Default serial configuration: **9600 bps, 8 data bits, no parity, 1 stop bit**.
@@ -204,6 +209,7 @@ AT$CV?<br>AT$CV*n* | TLS certificate verification. 0 = off (insecure, accept any
 AT$MDNS?<br>AT$MDNS=*mDNS name* | Query/change the mDNS network name. With a non-zero TCP port set, reach it via `telnet mdnsname.local port`.
 AT$PASS?<br>AT$PASS=*WiFi pwd* | Query/change the WiFi password (case sensitive, max 64 chars). Set empty to clear.
 AT$SB?<br>AT$SB=*n* | Query/change baud rate: 110, 300, 450, 600, 710, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 76800, 115200. Must match your terminal.
+AT$SCAN | Scan for nearby 2.4 GHz WiFi networks. Lists one access point per line as `<index> <ssid>` (1-based, de-duplicated by SSID, hidden SSIDs skipped), then `OK`. The index is meant to drive a numbered menu whose choice is fed back via `AT$SSID=`. See [`oric/wificonf.bas`](../oric/wificonf.bas) for an Oric configurator that uses it.
 AT$SP?<br>AT$SP=*n* | TCP server port to listen on (0 = disabled).
 AT$SSID?<br>AT$SSID=*ssid* | Query/change the SSID (case sensitive, max 32 chars). Set empty to clear.
 AT$SU?<br>AT$SU=*dps* | Data bits (5-8), parity (N/O/E), stop bits (1-2). Default 8N1.
