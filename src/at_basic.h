@@ -162,19 +162,31 @@ char *dialNumber(char *atCmd) {
    }
 
    sessionTelnetType = settings.telnet;
-   switch( host[0] ) {
-      case '-':
-         ++host;
-         sessionTelnetType = NO_TELNET;
-         break;
-      case '=':
-         ++host;
-         sessionTelnetType = REAL_TELNET;
-         break;
-      case '+':
-         ++host;
-         sessionTelnetType = FAKE_TELNET;
-         break;
+   sessionSecure = false;
+   // Leading dial prefixes (combinable, e.g. "#=host"): '-' no telnet,
+   // '=' real telnet, '+' fake telnet, '#' terminate TLS for this call.
+   for( bool more = true; more; ) {
+      switch( host[0] ) {
+         case '-':
+            ++host;
+            sessionTelnetType = NO_TELNET;
+            break;
+         case '=':
+            ++host;
+            sessionTelnetType = REAL_TELNET;
+            break;
+         case '+':
+            ++host;
+            sessionTelnetType = FAKE_TELNET;
+            break;
+         case '#':
+            ++host;
+            sessionSecure = true;
+            break;
+         default:
+            more = false;
+            break;
+      }
    }
 
    if( !settings.quiet && settings.extendedCodes ) {
@@ -183,7 +195,7 @@ char *dialNumber(char *atCmd) {
    }
    sleep_ms(2000);   // delay for ZMP to be able to detect CONNECT
    if( !ser_is_readable(ser0) ) {
-      tcpClient = tcpConnect( &tcpClient0, host, portNum);
+      tcpClient = tcpConnect( &tcpClient0, host, portNum, sessionSecure);
       if( tcpClient ) {
          connectTime = millis();
          dtrWentInactive = false;
@@ -236,31 +248,39 @@ char *doEcho(char *atCmd) {
 }
 
 //
-// ATGEThttp://host[/path]: fetch a web page
-//
-// NOTE: http only: no https support
+// ATGEThttp://host[:port][/path]  — fetch a web page (plain HTTP)
+// ATGEThttps://host[:port][/path] — fetch over TLS (terminated by the modem)
 //
 char *httpGet(char *atCmd) {
-   char *host, *path, *port;
+   char *host, *path, *port, *scheme;
    int portNum;
-   port = strrchr(atCmd, ':');
-   host = strstr(atCmd, "http://");
-   if( !port || port == host + 4) {
+   bool secure = false;
+
+   // Scheme selects transport and default port. https:// is checked first
+   // because "http://" is a substring-prefix concern only the other way round.
+   if( (scheme = strstr(atCmd, "https://")) != NULL ) {
+      secure = true;
+      host = scheme + 8;
+      portNum = HTTPS_PORT;
+   } else if( (scheme = strstr(atCmd, "http://")) != NULL ) {
+      host = scheme + 7;
       portNum = HTTP_PORT;
    } else {
-      portNum = atoi(port + 1);
-      *port = NUL;
-   }
-   if( !host ) {
       sendResult(R_ERROR);
       return atCmd;
-   } else {
-      host += 7; // skip over http://
-      path = strchr(host, '/');
    }
+
+   // Split host[:port][/path]: cut the path first, then the optional port,
+   // so a ':' in the port and a '/' in the path don't interfere.
+   path = strchr(host, '/');
    if( path ) {
       *path = NUL;
       ++path;
+   }
+   port = strchr(host, ':');
+   if( port ) {
+      portNum = atoi(port + 1);
+      *port = NUL;
    }
 #if DEBUG
    printf("Getting path /");
@@ -269,8 +289,8 @@ char *httpGet(char *atCmd) {
    }
    printf(" from port %u of host %s...\r\n", portNum, host);
 #endif
-   // Establish connection
-   tcpClient = tcpConnect(&tcpClient0, host, portNum);
+   // Establish connection (TLS-terminated when the URL scheme is https)
+   tcpClient = tcpConnect(&tcpClient0, host, portNum, secure);
    if( !tcpClient ) {
       sendResult(R_NO_CARRIER);
       ser_set(DCD, !ACTIVE);
@@ -492,7 +512,7 @@ char *showNetworkInfo(char *atCmd) {
       snprintf(infoLine, sizeof infoLine, "Pgm. free..: %lu", getFreeProgramSpace());
       if( PagedOut(infoLine) ) break;
       if( tcpIsConnected(tcpClient) ) {
-         snprintf(infoLine, sizeof infoLine, "Call status: CONNECTED TO %s", ip4addr_ntoa(&tcpClient->pcb->remote_ip));
+         snprintf(infoLine, sizeof infoLine, "Call status: CONNECTED TO %s", ip4addr_ntoa(altcp_get_ip(tcpClient->pcb, 0)));
          if( PagedOut(infoLine) ) break;
          snprintf(infoLine, sizeof infoLine, "Call length: %s", connectTimeString());
          if( PagedOut(infoLine) ) break;
@@ -598,7 +618,7 @@ char *doDateTime(char *atCmd) {
    
    if( !tcpIsConnected(tcpClient) ) {
       char result[80], *ptr;
-      tcpClient = tcpConnect(&tcpClient0, NIST_HOST, NIST_PORT);
+      tcpClient = tcpConnect(&tcpClient0, NIST_HOST, NIST_PORT, false);
       if( tcpClient ) {
          ser_set(DCD, ACTIVE);
          // read date/time from NIST

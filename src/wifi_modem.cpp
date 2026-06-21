@@ -411,6 +411,12 @@ void doAtCmds(char *atCmd) {
                } else if( !strncasecmp(atCmd, "$MDNS", 5) ) {
                   // handle mDNS name
                   atCmd = doMdnsName(atCmd + 5);
+               } else if( !strncasecmp(atCmd, "$CV", 3) ) {
+                  // TLS certificate verification on/off
+                  atCmd = doCertVerify(atCmd + 3);
+               } else if( !strncasecmp(atCmd, "$CA", 3) ) {
+                  // TLS CA certificate status/clear
+                  atCmd = doCACert(atCmd + 3);
                } else {
                   // unrecognized command
                   sendResult(R_ERROR);

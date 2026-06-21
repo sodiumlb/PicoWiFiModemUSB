@@ -522,3 +522,114 @@ char *doStartupWait(char *atCmd) {
    }
    return atCmd;
 }
+
+//
+// AT$CV? query TLS certificate verification (0 = off/insecure, 1 = on)
+// AT$CV0 disable certificate verification (insecure: accept any server cert)
+// AT$CV1 enable certificate verification (ERROR if no CA stored in LittleFS)
+//
+char *doCertVerify(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?':
+         ++atCmd;
+         printf("%u\r\n", settings.tlsVerify);
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '0':
+         settings.tlsVerify = false;
+         ++atCmd;
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '1':
+         ++atCmd;
+         // Refuse to enable verification without a stored CA: otherwise it would
+         // be silently insecure (no CA => VERIFY_NONE accepts any cert), giving a
+         // false sense of security. Load a CA first with AT$CA=.
+         if( !hasCACert() ) {
+            sendResult(R_ERROR);
+         } else {
+            settings.tlsVerify = true;
+            if( !atCmd[0] ) {
+               sendResult(R_OK);
+            }
+         }
+         break;
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
+
+//
+// AT$CA? report the stored TLS CA size in bytes (0 = none)
+// AT$CA= upload a CA certificate (PEM); end with a line containing only '.'
+// AT$CA- delete the stored CA
+//
+char *doCACert(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?':
+         ++atCmd;
+         printf("CA: %d bytes\r\n", caCertSize());
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '=': {
+         // Upload a CA in PEM form: read from the serial port until a line
+         // containing only '.' is received, then store it via writeCACert().
+         // The USB stack is pumped during the (blocking) read so the CDC stays
+         // alive (same rationale as the startupWait loop fix).
+         ++atCmd;
+         static char pem[4096];
+         size_t len = 0, lineBeg = 0;
+         bool done = false;
+         ser_puts(ser0, "\r\nSend CA in PEM; end with a line containing only '.'\r\n");
+         while( !done && len < sizeof(pem) - 1 ) {
+            tud_task();
+            cdc_task();
+            if( !ser_is_readable(ser0) ) {
+               continue;
+            }
+            char c = ser_getc(ser0);
+            if( c == '\r' ) {
+               continue;               // segment on LF only
+            }
+            if( c == '\n' ) {
+               if( len - lineBeg == 1 && pem[lineBeg] == '.' ) {
+                  len = lineBeg;        // drop the terminator line
+                  done = true;
+               } else {
+                  pem[len++] = '\n';    // keep the newline inside the PEM
+                  lineBeg = len;
+               }
+            } else {
+               pem[len++] = c;
+            }
+         }
+         pem[len] = NUL;
+         if( len > 0 && writeCACert(pem, len) ) {
+            printf("CA stored: %u bytes\r\n", (unsigned)len);
+            sendResult(R_OK);
+         } else {
+            sendResult(R_ERROR);
+         }
+         break;
+      }
+      case '-':
+         ++atCmd;
+         deleteCACert();
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
