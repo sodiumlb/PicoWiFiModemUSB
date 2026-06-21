@@ -47,11 +47,13 @@ char *wifiConnection(char *atCmd) {
          break;
       case '1':
          ++atCmd;
-         if( settings.ssid[0] && settings.wifiPassword[0] ) {
+         if( settings.ssid[0] ) {
+            // Empty password => open network (no auth); otherwise WPA2.
+            uint32_t authMode = settings.wifiPassword[0] ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN;
             if( !settings.quiet && settings.extendedCodes ) {
                printf("CONNECTING TO SSID %s", settings.ssid);
             }
-            cyw43_arch_wifi_connect_async(settings.ssid, settings.wifiPassword, CYW43_AUTH_WPA2_AES_PSK);
+            cyw43_arch_wifi_connect_async(settings.ssid, settings.wifiPassword, authMode);
             for( int i = 0; i < 50; ++i ) {
                sleep_ms(500);
                if( !settings.quiet && settings.extendedCodes ) {
@@ -79,7 +81,7 @@ char *wifiConnection(char *atCmd) {
             }
          } else {
             if( !settings.quiet && settings.extendedCodes ) {
-               printf("Configure SSID and password. Type AT? for help.\r\n");
+               printf("Configure SSID. Type AT? for help.\r\n");
             }
             sendResult(R_ERROR);
          }
