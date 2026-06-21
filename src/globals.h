@@ -30,6 +30,7 @@
    uint8_t  passwordLen = 0;
    uint8_t  txBuf[TX_BUF_SIZE];  // Transmit Buffer
    uint8_t  sessionTelnetType;
+   bool     sessionSecure = false;  // true if the current call terminates TLS
    volatile bool dtrWentInactive = false;
    bool     amClient = false;    // true if we've connected TO a remote server
 #ifndef NDEBUG

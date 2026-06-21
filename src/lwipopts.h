@@ -20,16 +20,20 @@
 #define MEM_LIBC_MALLOC             0
 #endif
 #define MEM_ALIGNMENT               4
-#define MEM_SIZE                    4000
+#define MEM_SIZE                    16384
 #define MEMP_NUM_TCP_SEG            32
 #define MEMP_NUM_ARP_QUEUE          10
-#define PBUF_POOL_SIZE              24
+#define PBUF_POOL_SIZE              32
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
 #define LWIP_ICMP                   1
 #define LWIP_RAW                    1
-#define TCP_WND                     (8 * TCP_MSS)
+// TLS: altcp_tls stalls if the receive window is smaller than the decryption
+// buffer (MBEDTLS_SSL_IN_CONTENT_LEN). Sprint 3 capped that buffer at 8 KB, so
+// 6*MSS = 8760 B keeps a full record in flight while reclaiming RAM vs the
+// earlier 12*MSS. Keep TCP_WND >= MBEDTLS_SSL_IN_CONTENT_LEN.
 #define TCP_MSS                     1460
+#define TCP_WND                     (6 * TCP_MSS)
 #define TCP_SND_BUF                 (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
 #define LWIP_NETIF_STATUS_CALLBACK  1
@@ -49,6 +53,18 @@
 #define LWIP_DNS                    1
 #define LWIP_TCP_KEEPALIVE          1
 #define LWIP_NETIF_TX_SINGLE_PBUF   1
+// Application-layered TCP (altcp): lets the modem open either a plain TCP
+// connection or a terminated TLS session, behind one isomorphic API. Sprint 1
+// enabled altcp with the plain allocator only; the TLS sprint layers mbedTLS on
+// top via LWIP_ALTCP_TLS / LWIP_ALTCP_TLS_MBEDTLS.
+#define LWIP_ALTCP                  1
+#define LWIP_ALTCP_TLS              1
+#define LWIP_ALTCP_TLS_MBEDTLS      1
+// Insecure mode (sprint 2): no CA bundle, so do not verify the server
+// certificate — the handshake must complete against any peer. With
+// VERIFY_OPTIONAL, altcp's verify callback still aborts the handshake on a
+// cert/hostname mismatch; force NONE. CA-bundle verification is a later sprint.
+#define ALTCP_MBEDTLS_AUTHMODE      0   /* MBEDTLS_SSL_VERIFY_NONE */
 #define DHCP_DOES_ARP_CHECK         0
 #define LWIP_DHCP_DOES_ACD_CHECK    0
 

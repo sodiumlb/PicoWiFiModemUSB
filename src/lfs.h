@@ -15,6 +15,12 @@ extern "C" {
     bool readSettings(SETTINGS_T *p);
     bool writeSettings(SETTINGS_T *p);
 
+    bool hasCACert(void);
+    int  readCACert(char *buf, size_t bufsz);
+    bool writeCACert(const char *pem, size_t len);
+    bool deleteCACert(void);
+    int  caCertSize(void);
+
 #ifdef __cplusplus
 } //extern "C"
 #endif
