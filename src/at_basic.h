@@ -53,7 +53,14 @@ char *wifiConnection(char *atCmd) {
             }
             cyw43_arch_wifi_connect_async(settings.ssid, settings.wifiPassword, CYW43_AUTH_WPA2_AES_PSK);
             for( int i = 0; i < 50; ++i ) {
-               sleep_ms(500);
+               // Pump the USB stack during the 500 ms wait, otherwise the CDC
+               // is frozen for the whole connection attempt (up to 25 s) —
+               // same deadlock class as the startupWait loop.
+               absolute_time_t until = make_timeout_time_ms(500);
+               while( !time_reached(until) ) {
+                  tud_task();
+                  cdc_task();
+               }
                if( !settings.quiet && settings.extendedCodes ) {
                   ser_putc(ser0, '.');
                }
