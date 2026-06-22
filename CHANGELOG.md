@@ -5,6 +5,38 @@ Voir le document de conception : `../docs/design-proxy-tls-ssh.md`.
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] — 2026-06-22 — Synchro NTP + vérification de date des certificats
+
+**Ajouté**
+- **Synchro horloge SNTP** (`src/time_support.h`, lib `pico_lwip_sntp`) : à la connexion
+  WiFi, l'heure est synchronisée via `pool.ntp.org`. **Mode « one-shot »** : dès la 1re
+  synchro, `maybeStopSntp()` (appelé dans `loop()`) **arrête** le service — le laisser
+  actif en arrière-plan figeait la puce pendant le scan flash de `lazyCaCb` (handshake).
+- **Vérification de date des certificats** (`src/tcp_support.h`) : `dateVerifyCb` est posé
+  via `mbedtls_ssl_conf_verify` en mode vérifié ; il marque `BADCERT_EXPIRED` /
+  `BADCERT_FUTURE` selon l'horloge → un cert **expiré ou pas encore valide est refusé**
+  (`NO CARRIER`), uniquement si l'heure est synchronisée (sinon pas de rejet, faute
+  d'horloge fiable). Repli plancher = date de build (`BUILD_EPOCH`, CMake).
+- **`AT$TIME?`** (heure UTC + fuseau + état synchro) et **`AT$TIME=<epoch>`** (réglage
+  manuel hors-ligne). **`AT$TZ?`** / **`AT$TZ=±H[:MM]`** (fuseau, ±14:00 ; affichage
+  seulement — la vérif des certs reste en UTC). `FW_VERSION` **0.3.0**.
+
+**Choix d'implémentation (pièges rencontrés en validation matérielle)**
+- **Pas** de `MBEDTLS_HAVE_TIME_DATE` : activer la vérif de date *interne* de mbedTLS avec
+  le callback de confiance `lazyCaCb` **figeait le handshake**. La date est vérifiée par
+  notre `dateVerifyCb` à la place.
+- **Pas** de `mbedtls_ssl_get_peer_cert` (cert libéré après handshake faute de
+  `MBEDTLS_SSL_KEEP_PEER_CERTIFICATE` → pointeur invalide) : la vérif se fait *pendant* le
+  handshake, cert vivant.
+- **Pas** de `gmtime_r` dans le handshake (verrou newlib → deadlock en contexte
+  `async_context`) : conversion epoch→date purement arithmétique (`epochToYMDHMS`).
+
+**Validé sur matériel (2026-06-22)** — synchro SNTP auto au boot : `badssl.com` → CONNECT,
+`expired.badssl.com` → NO CARRIER (rejeté pour expiration), `untrusted-root` → NO CARRIER,
+`AT$TZ=+2` → heure locale correcte, aucun blocage.
+
+**Limite connue** : le fuseau `AT$TZ` n'est pas persistant (RAM, remis à UTC au reboot).
+
 ## [0.2.2] — 2026-06-22 — Correctif scan E-lazy (gros bundle) + validation 150 CA
 
 **Corrigé** (bug trouvé en validation matérielle sur un bundle Mozilla réel)

@@ -51,11 +51,14 @@ add_executable(${PROJECT_NAME}
 if(WOKWI)
       target_compile_definitions(${PROJECT_NAME} PRIVATE WOKWI_BUILD=1)
 endif()
+# Plancher horloge avant synchro SNTP : date de configuration CMake (cf. time_support.h).
+string(TIMESTAMP BUILD_EPOCH "%s" UTC)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
       CYW43_HOST_NAME=\"${CYW43_HOST_NAME}\"
       LFS_NO_MALLOC=1
       LFS_NAME_MAX=64
       PICO_FLASH_SIZE_BYTES=2097152
+      BUILD_EPOCH=${BUILD_EPOCH}UL
       MBEDTLS_CONFIG_FILE=\"mbedtls_config.h\"
       #PICO_STDIO_ENABLE_CRLF_SUPPORT
       )
@@ -66,6 +69,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME}
       pico_cyw43_arch_lwip_threadsafe_background
       pico_lwip_mbedtls
+      pico_lwip_sntp
       pico_mbedtls
       pico_stdlib
       hardware_i2c

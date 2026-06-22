@@ -51,6 +51,7 @@
 #include "wifi_modem.h"
 //#include "eeprom.h"
 #include "lfs.h"
+#include "time_support.h"
 #include "tcp_support.h"
 #include "support.h"
 #include "at_basic.h"
@@ -183,6 +184,7 @@ void setup(void) {
       if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ) {
          ser_set(DSR, ACTIVE);  // modem is finally ready or SSID not configured
          dns_init();
+         startSntp();           // synchronise l'heure une fois (arrêté ensuite, cf. loop)
       }
       if( settings.autoExecute[0] ) {
          strncpy(atCmd, settings.autoExecute, MAX_CMD_LEN);
@@ -216,6 +218,8 @@ void loop(void) {
    tud_task();
    cdc_task();
 #endif
+
+   maybeStopSntp();   // arrête SNTP dès la 1re synchro (évite le hang handshake)
 
    checkForIncomingCall();
 
@@ -333,6 +337,12 @@ void doAtCmds(char *atCmd) {
                } else if( !strncasecmp(atCmd, "$PASS", 5) ) {
                   // query/set WiFi password
                   atCmd = doWiFiPassword(atCmd + 5);
+               } else if( !strncasecmp(atCmd, "$TIME", 5) ) {
+                  // query/set system time (UTC epoch) for cert date verification
+                  atCmd = doTime(atCmd + 5);
+               } else if( !strncasecmp(atCmd, "$TZ", 3) ) {
+                  // query/set timezone offset (display only)
+                  atCmd = doTimeZone(atCmd + 3);
                } else if( !strncasecmp(atCmd, "C", 1) ) {
                   // connect/disconnect to WiFi
                   atCmd = wifiConnection(atCmd + 1);

@@ -127,6 +127,89 @@ char *doWiFiPassword(char *atCmd) {
 }
 
 //
+// AT$TIME?          query current UTC time (and sync source)
+// AT$TIME=<epoch>   force the clock (UNIX epoch, seconds) — offline fallback
+//
+char *doTime(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?': {
+         ++atCmd;
+         time_t utc = modemNow();
+         time_t loc = utc + (time_t)tzOffsetMin * 60;   // heure locale (affichage)
+         struct tm tmv;
+         gmtime_r(&loc, &tmv);
+         char buf[32];
+         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmv);
+         int off = tzOffsetMin;
+         printf("%s UTC%+03d:%02d (epoch %lu, %s)\r\n",
+                buf, off / 60, (off < 0 ? -off : off) % 60,
+                (unsigned long)utc, timeSynced ? "synced" : "build-fallback");
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      }
+      case '=': {
+         ++atCmd;
+         unsigned long epoch = strtoul(atCmd, NULL, 10);
+         atCmd[0] = NUL;
+         if( epoch > 0 ) {
+            sntpSetSystemTime(epoch);
+            sendResult(R_OK);
+         } else {
+            sendResult(R_ERROR);
+         }
+         break;
+      }
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
+
+//
+// AT$TZ?            query timezone offset (display only; cert checks stay in UTC)
+// AT$TZ=±H[:MM]     set timezone offset, e.g. +2, -8, +05:30 (range ±14:00)
+//
+char *doTimeZone(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?':
+         ++atCmd;
+         printf("UTC%+03d:%02d\r\n", tzOffsetMin / 60,
+                (tzOffsetMin < 0 ? -tzOffsetMin : tzOffsetMin) % 60);
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '=': {
+         ++atCmd;
+         const char *p = atCmd;
+         int sign = 1;
+         if( *p == '+' ) { ++p; }
+         else if( *p == '-' ) { sign = -1; ++p; }
+         int hh = atoi(p);
+         int mm = 0;
+         const char *colon = strchr(p, ':');
+         if( colon ) mm = atoi(colon + 1);
+         int off = sign * (hh * 60 + mm);
+         atCmd[0] = NUL;
+         if( off >= -14 * 60 && off <= 14 * 60 ) {   // bornes UTC-14..+14
+            tzOffsetMin = off;
+            sendResult(R_OK);
+         } else {
+            sendResult(R_ERROR);
+         }
+         break;
+      }
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
+
+//
 // AT$SB?  query serial speed
 // AT$SB=n set serial speed
 //

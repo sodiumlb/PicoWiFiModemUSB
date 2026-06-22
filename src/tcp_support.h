@@ -106,6 +106,36 @@ static int lazyCaCb(void *ctx, const mbedtls_x509_crt *child,
    caBundleClose();
    return 0;
 }
+
+// Vérification de date (mbedTLS n'a pas HAVE_TIME_DATE — il figeait le handshake avec
+// le callback de confiance). Renvoie 0 si `crt` est dans sa période de validité,
+// MBEDTLS_X509_BADCERT_FUTURE (pas encore valide) ou MBEDTLS_X509_BADCERT_EXPIRED selon
+// l'horloge SNTP. Comparaison lexicographique (année, mois, jour, h, min, s).
+static uint32_t certDateFlags(const mbedtls_x509_crt *crt) {
+   long cur[6];
+   epochToYMDHMS(modemNow(), cur);          // PAS gmtime_r (verrou → deadlock handshake)
+   const mbedtls_x509_time *vf = &crt->valid_from, *vt = &crt->valid_to;
+   long from[6] = { vf->year, vf->mon, vf->day, vf->hour, vf->min, vf->sec };
+   long to[6]   = { vt->year, vt->mon, vt->day, vt->hour, vt->min, vt->sec };
+   int cf = 0, ct = 0;                       // signe de (cur - valid_from) et (cur - valid_to)
+   for( int i = 0; i < 6 && cf == 0; ++i ) cf = (cur[i] > from[i]) - (cur[i] < from[i]);
+   for( int i = 0; i < 6 && ct == 0; ++i ) ct = (cur[i] > to[i])   - (cur[i] < to[i]);
+   if( cf < 0 ) return MBEDTLS_X509_BADCERT_FUTURE;   // cur < valid_from → pas encore valide
+   if( ct > 0 ) return MBEDTLS_X509_BADCERT_EXPIRED;  // cur > valid_to   → expiré
+   return 0;
+}
+
+// Verify callback mbedTLS : appelé pour chaque cert de la chaîne PENDANT le handshake
+// (le cert est encore vivant). On ajoute le défaut de date aux flags → handshake refusé
+// si expiré/non encore valide. Seulement si l'heure est synchronisée (sinon on ne
+// rejette pas faute d'horloge fiable). Voir time_support.h.
+static int dateVerifyCb(void *ctx, mbedtls_x509_crt *crt, int depth, uint32_t *flags) {
+   (void)ctx; (void)depth;
+   if( timeSynced ) {
+      *flags |= certDateFlags(crt);
+   }
+   return 0;
+}
 #endif
 
 static volatile bool dnsLookupFinished = false;
@@ -352,6 +382,7 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
             mbedtls_ssl_config *conf = (mbedtls_ssl_config *)ssl->conf;
             if( settings.tlsVerify && hasCACert() ) {
                mbedtls_ssl_conf_ca_cb(conf, lazyCaCb, NULL);
+               mbedtls_ssl_conf_verify(conf, dateVerifyCb, NULL);  // vérif. date (SNTP)
                mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_REQUIRED);
             } else {
                mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_NONE);

@@ -82,6 +82,7 @@ char *wifiConnection(char *atCmd) {
             } else {
                ser_set(DSR, ACTIVE);  // modem is ready
                dns_init();
+               startSntp();           // synchronise l'heure une fois (arrêté ensuite, cf. loop)
                if( !settings.quiet && settings.extendedCodes ) {
                   printf("CONNECTED TO %s IP ADDRESS: %s\r\n",
                      settings.ssid, ip4addr_ntoa(netif_ip4_addr(&cyw43_state.netif[0])));

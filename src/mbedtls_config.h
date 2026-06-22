@@ -30,6 +30,11 @@
 
 #define MBEDTLS_ALLOW_PRIVATE_ACCESS
 #define MBEDTLS_HAVE_TIME
+// NB : on n'active PAS MBEDTLS_HAVE_TIME_DATE. Activer la vérification de date *interne*
+// de mbedTLS pendant le handshake (en présence du callback de confiance lazyCaCb) figeait
+// la boucle modem (v0.3.0 expérimental). À la place, la date est vérifiée *après* le
+// handshake, sur le certificat du pair, par certDateInvalid() dans tcp_support.h, à partir
+// de l'horloge SNTP (time_support.h). Plus simple, sans toucher au coeur de mbedTLS.
 
 #define MBEDTLS_CIPHER_MODE_CBC
 #define MBEDTLS_ECP_DP_SECP256R1_ENABLED
