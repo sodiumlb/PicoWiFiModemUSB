@@ -21,6 +21,11 @@ extern "C" {
     bool deleteCACert(void);
     int  caCertSize(void);
 
+    // E-lazy streaming cursor over the CA bundle (ca.pem)
+    bool caBundleOpen(void);
+    int  caBundleRead(void *buf, size_t n);
+    void caBundleClose(void);
+
 #ifdef __cplusplus
 } //extern "C"
 #endif

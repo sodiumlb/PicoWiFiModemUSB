@@ -2,7 +2,96 @@
 // lwIP interface functions
 //
 #if LWIP_ALTCP_TLS_MBEDTLS
-#include "mbedtls/ssl.h"   // mbedtls_ssl_set_hostname() for TLS SNI
+#include "mbedtls/ssl.h"       // mbedtls_ssl_set_hostname() for TLS SNI
+#include "mbedtls/x509_crt.h"  // E-lazy on-demand trusted-CA callback
+#include "mbedtls/platform.h"  // mbedtls_calloc() / mbedtls_free()
+#include <string.h>
+
+// ── E-lazy: on-demand trusted-CA lookup ────────────────────────────────────
+// Instead of parsing the whole CA store into RAM (impossible on the RP2040 for
+// a full bundle), we stream the LittleFS bundle (ca.pem, one or many PEM certs
+// concatenated) and parse only the single CA whose subject matches the issuer
+// mbedTLS is currently looking for. Peak RAM ≈ one certificate.
+// See docs/design-proxy-tls-ssh.md §10.
+
+#define CA_LAZY_PEM_MAX 2560   // one PEM cert (covers RSA-4096 roots)
+
+// Small buffered reader over the bundle cursor (avoids a flash call per byte).
+static char caRdBuf[256];
+static int  caRdLen = 0, caRdPos = 0;
+
+static int caRdGetc(void) {
+   if( caRdPos >= caRdLen ) {
+      caRdLen = caBundleRead(caRdBuf, sizeof(caRdBuf));
+      caRdPos = 0;
+      if( caRdLen <= 0 ) return -1;
+   }
+   return (unsigned char)caRdBuf[caRdPos++];
+}
+
+// Copy the next PEM certificate block (BEGIN..END inclusive, NUL-terminated)
+// into out. Returns its length (>0), 0 at end of bundle, or -1 on overflow /
+// truncated block.
+static int caLazyNextBlock(char *out, size_t outsz) {
+   char line[96];
+   size_t len = 0;
+   bool capturing = false;
+   for(;;) {
+      size_t ll = 0;
+      int c;
+      while( (c = caRdGetc()) >= 0 && c != '\n' ) {
+         if( c == '\r' ) continue;
+         if( ll < sizeof(line) - 1 ) line[ll++] = (char)c;
+      }
+      line[ll] = '\0';
+      if( c < 0 && ll == 0 )
+         return capturing ? -1 : 0;        // EOF: clean end, or truncated block
+      if( !capturing ) {
+         if( strstr(line, "BEGIN CERTIFICATE") ) capturing = true;
+         else continue;                    // skip whatever sits between certs
+      }
+      if( len + ll + 1 >= outsz ) return -1;   // cert larger than CA_LAZY_PEM_MAX
+      memcpy(out + len, line, ll); len += ll;
+      out[len++] = '\n';
+      if( strstr(line, "END CERTIFICATE") ) { out[len] = '\0'; return (int)len; }
+      if( c < 0 ) return -1;               // EOF in the middle of a block
+   }
+}
+
+// mbedTLS trust callback: return the CA(s) that may have issued `child`.
+static int lazyCaCb(void *ctx, const mbedtls_x509_crt *child,
+                    mbedtls_x509_crt **candidate_cas) {
+   (void)ctx;
+   *candidate_cas = NULL;
+   if( !caBundleOpen() ) return 0;         // no bundle → no candidate (verify fails)
+   caRdLen = caRdPos = 0;
+   static char pem[CA_LAZY_PEM_MAX];
+   int n;
+   while( (n = caLazyNextBlock(pem, sizeof(pem))) > 0 ) {
+      mbedtls_x509_crt probe;
+      mbedtls_x509_crt_init(&probe);
+      if( mbedtls_x509_crt_parse(&probe, (const unsigned char *)pem, (size_t)n + 1) == 0
+          && probe.subject_raw.len == child->issuer_raw.len
+          && memcmp(probe.subject_raw.p, child->issuer_raw.p, probe.subject_raw.len) == 0 ) {
+         // Match: hand a fresh heap copy to mbedTLS, which takes ownership.
+         mbedtls_x509_crt *cand = (mbedtls_x509_crt *)mbedtls_calloc(1, sizeof(*cand));
+         if( cand ) {
+            mbedtls_x509_crt_init(cand);
+            if( mbedtls_x509_crt_parse(cand, (const unsigned char *)pem, (size_t)n + 1) == 0 ) {
+               *candidate_cas = cand;
+            } else {
+               mbedtls_x509_crt_free(cand);
+               mbedtls_free(cand);
+            }
+         }
+         mbedtls_x509_crt_free(&probe);
+         break;
+      }
+      mbedtls_x509_crt_free(&probe);
+   }
+   caBundleClose();
+   return 0;
+}
 #endif
 
 static volatile bool dnsLookupFinished = false;
@@ -207,35 +296,17 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
       return NULL;
    } else {
       // The altcp allocator selects the transport: plain TCP, or a terminated
-      // TLS session when the call is secure (dial prefix '#'). The client TLS
-      // config carries no CA, so mbedTLS runs in VERIFY_OPTIONAL mode: the
-      // handshake completes but the peer certificate is NOT verified (insecure;
-      // CA-bundle verification is a later sprint). Created once, then shared.
+      // TLS session when the call is secure (dial prefix '#'). The shared client
+      // TLS config carries NO CA chain in RAM. Trust is resolved per-handshake:
+      // when verification is enabled (AT$CV1 + a bundle present) the lazyCaCb
+      // callback streams the LittleFS bundle and parses one CA at a time, so RAM
+      // stays flat regardless of bundle size (E-lazy; design §10). Authmode and
+      // the CA callback are (re)applied per pcb in the SNI block below.
       altcp_allocator_t allocator;
       if( secure ) {
          static struct altcp_tls_config *tlsConfig = NULL;
-         static bool tlsConfigVerify = false;
-         // Verify the server cert only when the user enabled it (AT$CV1) AND a CA
-         // is stored in LittleFS; otherwise stay in insecure mode (no CA).
-         bool wantVerify = settings.tlsVerify && hasCACert();
-         // Rebuild the shared config when the mode changes (CA added/removed or
-         // AT$CV toggled) so it carries — or drops — the CA chain.
-         if( tlsConfig && tlsConfigVerify != wantVerify ) {
-            altcp_tls_free_config(tlsConfig);
-            tlsConfig = NULL;
-         }
          if( !tlsConfig ) {
-            if( wantVerify ) {
-               static char caBuf[4096];
-               int caLen = readCACert(caBuf, sizeof(caBuf));
-               if( caLen > 0 ) {
-                  // mbedTLS PEM parsing requires the length to include the NUL.
-                  tlsConfig = altcp_tls_create_config_client((const u8_t *)caBuf, (size_t)caLen + 1);
-               }
-            } else {
-               tlsConfig = altcp_tls_create_config_client(NULL, 0);
-            }
-            tlsConfigVerify = wantVerify;
+            tlsConfig = altcp_tls_create_config_client(NULL, 0);
          }
          if( !tlsConfig ) {
             return NULL;
@@ -259,11 +330,18 @@ TCP_CLIENT_T *tcpConnect(TCP_CLIENT_T *client, const char *host, int portNum, bo
       if( ssl ) {
          mbedtls_ssl_set_hostname(ssl, host);
          // Per-call auth mode: REQUIRED aborts the handshake on an untrusted
-         // cert (verify on + CA present), NONE accepts any peer (insecure).
+         // cert (verify on + a bundle present), NONE accepts any peer (insecure).
+         // In REQUIRED mode trust is resolved on demand by lazyCaCb (E-lazy):
+         // the shared config holds no CA chain, the callback supplies the right
+         // CA from the LittleFS bundle one at a time.
          if( ssl->conf ) {
-            mbedtls_ssl_conf_authmode((mbedtls_ssl_config *)ssl->conf,
-               (settings.tlsVerify && hasCACert()) ? MBEDTLS_SSL_VERIFY_REQUIRED
-                                                   : MBEDTLS_SSL_VERIFY_NONE);
+            mbedtls_ssl_config *conf = (mbedtls_ssl_config *)ssl->conf;
+            if( settings.tlsVerify && hasCACert() ) {
+               mbedtls_ssl_conf_ca_cb(conf, lazyCaCb, NULL);
+               mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+            } else {
+               mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_NONE);
+            }
          }
       }
    }

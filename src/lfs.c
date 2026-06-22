@@ -181,3 +181,34 @@ int caCertSize(void) {
       return (int)info.size;
    return 0;
 }
+
+// ── Streaming cursor over the CA bundle (E-lazy) ──
+// Forward-only reader letting the TLS layer scan a multi-certificate PEM bundle
+// one block at a time, without ever holding the whole store in RAM. Not
+// reentrant by design: a single TLS session runs at a time, and no flash write
+// happens during a handshake read, so the shared cursor is safe here.
+static lfs_file_t ca_iter;
+static uint8_t    ca_iter_buf[FLASH_PAGE_SIZE];
+static bool       ca_iter_open = false;
+
+bool caBundleOpen(void) {
+   struct lfs_file_config fc = { .buffer = ca_iter_buf };
+   if( ca_iter_open ) return false;
+   if( lfs_file_opencfg(&lfs_volume, &ca_iter, ca_fname, LFS_O_RDONLY, &fc) != LFS_ERR_OK )
+      return false;
+   ca_iter_open = true;
+   return true;
+}
+
+// Read up to n bytes sequentially. Returns the byte count (0 at EOF) or -1.
+int caBundleRead(void *buf, size_t n) {
+   if( !ca_iter_open ) return -1;
+   return (int)lfs_file_read(&lfs_volume, &ca_iter, buf, n);
+}
+
+void caBundleClose(void) {
+   if( ca_iter_open ) {
+      lfs_file_close(&lfs_volume, &ca_iter);
+      ca_iter_open = false;
+   }
+}

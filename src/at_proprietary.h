@@ -592,10 +592,16 @@ char *doCACert(char *atCmd) {
          // alive (same rationale as the startupWait loop fix).
          ++atCmd;
          static char pem[4096];
-         size_t len = 0, lineBeg = 0;
-         bool done = false;
+         size_t len = 0;            // bytes accumulated in pem (excl. NUL)
+         size_t lineLen = 0;        // chars on the current line (excl. CR/LF)
+         char   firstOnLine = 0;    // first char of the current line
+         bool   done = false, overflow = false;
+         size_t overflowDrain = 0;  // bounds the wait once we stop storing
          ser_puts(ser0, "\r\nSend CA in PEM; end with a line containing only '.'\r\n");
-         while( !done && len < sizeof(pem) - 1 ) {
+         // Read until the lone '.' terminator. On overflow we KEEP draining the
+         // stream (so the leftover PEM is not parsed as AT commands) but stop
+         // storing, and report ERROR instead of a truncated CA with a false OK.
+         while( !done ) {
 #ifndef WOKWI_BUILD
             tud_task();
             cdc_task();
@@ -608,22 +614,36 @@ char *doCACert(char *atCmd) {
                continue;               // segment on LF only
             }
             if( c == '\n' ) {
-               if( len - lineBeg == 1 && pem[lineBeg] == '.' ) {
-                  len = lineBeg;        // drop the terminator line
+               if( lineLen == 1 && firstOnLine == '.' ) {
+                  if( !overflow && len > 0 ) len--;   // drop the lone '.'
                   done = true;
-               } else {
-                  pem[len++] = '\n';    // keep the newline inside the PEM
-                  lineBeg = len;
+               } else if( !overflow ) {
+                  if( len < sizeof(pem) - 1 ) pem[len++] = '\n';   // keep the newline
+                  else overflow = true;
                }
+               lineLen = 0; firstOnLine = 0;
             } else {
-               pem[len++] = c;
+               if( lineLen == 0 ) firstOnLine = c;
+               lineLen++;
+               if( !overflow ) {
+                  if( len < sizeof(pem) - 1 ) pem[len++] = c;
+                  else overflow = true;
+               }
+            }
+            // Safety: don't wait forever for the terminator from a runaway sender.
+            if( overflow && ++overflowDrain > 4 * sizeof(pem) ) {
+               done = true;
             }
          }
          pem[len] = NUL;
-         if( len > 0 && writeCACert(pem, len) ) {
+         if( !overflow && len > 0 && writeCACert(pem, len) ) {
             printf("CA stored: %u bytes\r\n", (unsigned)len);
             sendResult(R_OK);
          } else {
+            if( overflow ) {
+               printf("CA too large (max %u bytes); not stored\r\n",
+                      (unsigned)(sizeof(pem) - 1));
+            }
             sendResult(R_ERROR);
          }
          break;

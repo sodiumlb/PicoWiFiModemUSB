@@ -1,6 +1,10 @@
 #ifndef _MODEM_H
    #define _MODEM_H
 
+   // TLS-proxy fork version (see ../CHANGELOG.md). Bumped to 0.2.1 for the
+   // E-lazy on-demand CA verification (multi-CA bundle, ~1 cert in RAM).
+   #define FW_VERSION            "0.2.1"
+
    #define DEBUG                 0
    #define DEFAULT_SPEED         9600
 

@@ -5,6 +5,52 @@ Voir le document de conception : `../docs/design-proxy-tls-ssh.md`.
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.1] — 2026-06-22 — Vérification CA « lazy » (E-lazy)
+
+Vérification de certificat contre un **bundle multi-CA** stocké en LittleFS, **sans**
+charger tout le magasin en RAM (impossible sur RP2040 : ~200–400 Ko pour le bundle
+Mozilla parsé). Conception détaillée : `../docs/design-proxy-tls-ssh.md` §10.
+
+**Ajouté**
+- `src/mbedtls_config.h` : `MBEDTLS_X509_TRUSTED_CERTIFICATE_CALLBACK` (active
+  `mbedtls_ssl_conf_ca_cb`).
+- `src/lfs.c` + `src/lfs.h` : curseur de lecture en flux sur `ca.pem`
+  (`caBundleOpen/Read/Close`) — permet de scanner un bundle PEM multi-certificats
+  un bloc à la fois, sans le charger entièrement.
+- `src/tcp_support.h` : `caLazyNextBlock()` (segmente les blocs `BEGIN…END
+  CERTIFICATE`) et `lazyCaCb()` (callback de confiance mbedTLS : parse **un** CA à
+  la fois et ne retient que celui dont le `subject` DER == `issuer` recherché). Pic
+  RAM ≈ 1 certificat, indépendant de la taille du bundle.
+- `src/wifi_modem.h` : `FW_VERSION "0.2.1"`, affichée par `ATI`
+  (« Pico WiFi modem v0.2.1 »).
+
+**Modifié**
+- `src/tcp_support.h` `tcpConnect()` : la config TLS client ne porte plus de chaîne
+  CA en RAM (`altcp_tls_create_config_client(NULL, 0)`). En mode vérifié (`AT$CV1` +
+  bundle présent) on pose `mbedtls_ssl_conf_ca_cb(conf, lazyCaCb, NULL)` +
+  `authmode REQUIRED` par session ; sinon `authmode NONE`. Supprime l'ancien
+  chargement `readCACert()`→`caBuf[4096]` en RAM et la reconstruction de config.
+
+**Corrigé**
+- `src/at_proprietary.h` `AT$CA=` : **fin de la troncature silencieuse** (backlog
+  design §9). En cas de PEM dépassant le tampon (4096 o), la commande ne stocke plus
+  un certificat tronqué avec un faux `OK` : elle draine le flux jusqu'au terminateur
+  `.` (pour ne pas réinjecter le reste dans le parseur AT), affiche
+  `CA too large (max 4095 bytes); not stored` et renvoie `ERROR`. Garde-fou bornant
+  l'attente du terminateur (`4 × sizeof(pem)`).
+
+**Compatibilité**
+- `ca.pem` accepte désormais **plusieurs** certificats PEM concaténés. Un CA unique
+  reste valide (rétro-compatible). L'upload `AT$CA=` reste plafonné à 4096 o ; un
+  bundle volumineux se provisionne par image LittleFS.
+
+**Validation**
+- ✅ Compilation `arm-none-eabi-gcc` 14.2.1 / `cmake --build` OK :
+  `wifi_modem.uf2` (~998 Ko), `text` ≈ 487 Ko, `bss` ≈ 130 Ko. Symboles
+  `lazyCaCb`/`caBundle*` présents.
+- ⏳ **À valider sur matériel** : bundle multi-CA réel + sites badssl valides/invalides
+  (chaîne acceptée → `CONNECT` / refusée → `NO CARRIER`).
+
 ## [non publié]
 
 ### Sprint 1 — Migration de la pile TCP vers l'API `altcp` (sans TLS)
