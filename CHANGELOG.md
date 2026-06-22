@@ -5,6 +5,29 @@ Voir le document de conception : `../docs/design-proxy-tls-ssh.md`.
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.2] — 2026-06-22 — Correctif scan E-lazy (gros bundle) + validation 150 CA
+
+**Corrigé** (bug trouvé en validation matérielle sur un bundle Mozilla réel)
+- `src/tcp_support.h` : le scan E-lazy s'**arrêtait** dès qu'un certificat dépassait le
+  buffer (`caLazyNextBlock()` renvoyait `−1`, la boucle `while(... > 0)` de `lazyCaCb()`
+  stoppait). Sur le bundle Mozilla, le **cert #1** (2772 o) bloquait le scan **avant** la
+  racine cible (ISRG Root X1, #80) → `badssl.com` refusé à tort. Désormais un cert trop
+  gros est **drainé puis sauté**, le scan continue :
+  - `caLazyNextBlock()` : codes de retour `0` (fin), `−1` (cert trop gros, bloc drainé),
+    `−2` (bloc tronqué) ; `lazyCaCb()` fait `continue` sur `−1`, ne s'arrête que sur `0`/`−2`.
+  - `CA_LAZY_PEM_MAX` : 2560 → **3072 o** (couvre les racines RSA-4096, max bundle ~2772 o).
+- `src/wifi_modem.h` : `FW_VERSION` **0.2.2** (affichée par `ATI`).
+
+**Validé sur matériel (2026-06-22)** — Pico W, image LittleFS de **150 CA** (bundle
+Mozilla, 224 Ko) : `badssl.com` → `CONNECT` (~5,6 s, scan jusqu'à ISRG #80),
+`untrusted-root.badssl.com` → `NO CARRIER` (~12 s, scan complet sans match), **Heap free
+stable ~123 Ko** (224 Ko jamais chargés → promesse RAM E-lazy tenue). Banc : `../validation/`.
+
+**Limite connue (backlog)**
+- Pas de **vérification de date** : `MBEDTLS_HAVE_TIME_DATE` absent + pas d'horloge au
+  boot → un certificat **expiré est accepté** (`expired.badssl.com` → CONNECT). Durcissement
+  proposé via **SNTP** (cf. `../docs/design-proxy-tls-ssh.md` §9).
+
 ## [0.2.1] — 2026-06-22 — Vérification CA « lazy » (E-lazy)
 
 Vérification de certificat contre un **bundle multi-CA** stocké en LittleFS, **sans**

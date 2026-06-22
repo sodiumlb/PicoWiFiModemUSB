@@ -14,7 +14,7 @@
 // mbedTLS is currently looking for. Peak RAM ≈ one certificate.
 // See docs/design-proxy-tls-ssh.md §10.
 
-#define CA_LAZY_PEM_MAX 2560   // one PEM cert (covers RSA-4096 roots)
+#define CA_LAZY_PEM_MAX 3072   // one PEM cert (covers RSA-4096 roots, e.g. Mozilla bundle max ~2772 o)
 
 // Small buffered reader over the bundle cursor (avoids a flash call per byte).
 static char caRdBuf[256];
@@ -30,12 +30,16 @@ static int caRdGetc(void) {
 }
 
 // Copy the next PEM certificate block (BEGIN..END inclusive, NUL-terminated)
-// into out. Returns its length (>0), 0 at end of bundle, or -1 on overflow /
-// truncated block.
+// into out. Return codes:
+//   >0  length of the captured cert
+//    0  clean end of bundle
+//   -1  cert larger than the buffer: the block is DRAINED to its END line so the
+//       caller stays in sync and can skip to the next cert (do NOT stop the scan)
+//   -2  EOF in the middle of a block (truncated bundle): real error, stop
 static int caLazyNextBlock(char *out, size_t outsz) {
    char line[96];
    size_t len = 0;
-   bool capturing = false;
+   bool capturing = false, overflow = false;
    for(;;) {
       size_t ll = 0;
       int c;
@@ -45,16 +49,24 @@ static int caLazyNextBlock(char *out, size_t outsz) {
       }
       line[ll] = '\0';
       if( c < 0 && ll == 0 )
-         return capturing ? -1 : 0;        // EOF: clean end, or truncated block
+         return capturing ? -2 : 0;        // EOF: truncated block, or clean end
       if( !capturing ) {
          if( strstr(line, "BEGIN CERTIFICATE") ) capturing = true;
          else continue;                    // skip whatever sits between certs
       }
-      if( len + ll + 1 >= outsz ) return -1;   // cert larger than CA_LAZY_PEM_MAX
-      memcpy(out + len, line, ll); len += ll;
-      out[len++] = '\n';
-      if( strstr(line, "END CERTIFICATE") ) { out[len] = '\0'; return (int)len; }
-      if( c < 0 ) return -1;               // EOF in the middle of a block
+      // Once oversized, keep consuming the block (to stay byte-aligned) without
+      // storing, so the next call resumes cleanly at the following certificate.
+      if( !overflow && len + ll + 1 >= outsz ) overflow = true;
+      if( !overflow ) {
+         memcpy(out + len, line, ll); len += ll;
+         out[len++] = '\n';
+      }
+      if( strstr(line, "END CERTIFICATE") ) {
+         if( overflow ) return -1;         // oversized cert: drained, skip it
+         out[len] = '\0';
+         return (int)len;
+      }
+      if( c < 0 ) return -2;               // EOF in the middle of a block
    }
 }
 
@@ -66,8 +78,10 @@ static int lazyCaCb(void *ctx, const mbedtls_x509_crt *child,
    if( !caBundleOpen() ) return 0;         // no bundle → no candidate (verify fails)
    caRdLen = caRdPos = 0;
    static char pem[CA_LAZY_PEM_MAX];
-   int n;
-   while( (n = caLazyNextBlock(pem, sizeof(pem))) > 0 ) {
+   for(;;) {
+      int n = caLazyNextBlock(pem, sizeof(pem));
+      if( n == -1 ) continue;              // cert too big for the buffer: skip it
+      if( n <= 0 ) break;                  // 0 = end of bundle, -2 = truncated block
       mbedtls_x509_crt probe;
       mbedtls_x509_crt_init(&probe);
       if( mbedtls_x509_crt_parse(&probe, (const unsigned char *)pem, (size_t)n + 1) == 0

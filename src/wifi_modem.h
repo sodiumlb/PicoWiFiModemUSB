@@ -1,9 +1,11 @@
 #ifndef _MODEM_H
    #define _MODEM_H
 
-   // TLS-proxy fork version (see ../CHANGELOG.md). Bumped to 0.2.1 for the
-   // E-lazy on-demand CA verification (multi-CA bundle, ~1 cert in RAM).
-   #define FW_VERSION            "0.2.1"
+   // TLS-proxy fork version (see ../CHANGELOG.md). 0.2.1: E-lazy on-demand CA
+   // verification (multi-CA bundle, ~1 cert in RAM). 0.2.2: fix the lazy scan so
+   // an oversized cert is skipped (not aborting the scan) — needed for real
+   // bundles with RSA-4096 roots; CA_LAZY_PEM_MAX 2560→3072.
+   #define FW_VERSION            "0.2.2"
 
    #define DEBUG                 0
    #define DEFAULT_SPEED         9600
