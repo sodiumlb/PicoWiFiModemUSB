@@ -127,6 +127,89 @@ char *doWiFiPassword(char *atCmd) {
 }
 
 //
+// AT$TIME?          query current UTC time (and sync source)
+// AT$TIME=<epoch>   force the clock (UNIX epoch, seconds) — offline fallback
+//
+char *doTime(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?': {
+         ++atCmd;
+         time_t utc = modemNow();
+         time_t loc = utc + (time_t)settings.tzOffsetMin * 60;   // local time (display)
+         struct tm tmv;
+         gmtime_r(&loc, &tmv);
+         char buf[32];
+         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmv);
+         int off = settings.tzOffsetMin;
+         printf("%s UTC%+03d:%02d (epoch %lu, %s)\r\n",
+                buf, off / 60, (off < 0 ? -off : off) % 60,
+                (unsigned long)utc, timeSynced ? "synced" : "build-fallback");
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      }
+      case '=': {
+         ++atCmd;
+         unsigned long epoch = strtoul(atCmd, NULL, 10);
+         atCmd[0] = NUL;
+         if( epoch > 0 ) {
+            sntpSetSystemTime(epoch);
+            sendResult(R_OK);
+         } else {
+            sendResult(R_ERROR);
+         }
+         break;
+      }
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
+
+//
+// AT$TZ?            query timezone offset (display only; cert checks stay in UTC)
+// AT$TZ=±H[:MM]     set timezone offset, e.g. +2, -8, +05:30 (range ±14:00)
+//
+char *doTimeZone(char *atCmd) {
+   switch( atCmd[0] ) {
+      case '?':
+         ++atCmd;
+         printf("UTC%+03d:%02d\r\n", settings.tzOffsetMin / 60,
+                (settings.tzOffsetMin < 0 ? -settings.tzOffsetMin : settings.tzOffsetMin) % 60);
+         if( !atCmd[0] ) {
+            sendResult(R_OK);
+         }
+         break;
+      case '=': {
+         ++atCmd;
+         const char *p = atCmd;
+         int sign = 1;
+         if( *p == '+' ) { ++p; }
+         else if( *p == '-' ) { sign = -1; ++p; }
+         int hh = atoi(p);
+         int mm = 0;
+         const char *colon = strchr(p, ':');
+         if( colon ) mm = atoi(colon + 1);
+         int off = sign * (hh * 60 + mm);
+         atCmd[0] = NUL;
+         if( off >= -14 * 60 && off <= 14 * 60 ) {   // bounds UTC-14..+14
+            settings.tzOffsetMin = off;
+            sendResult(R_OK);
+         } else {
+            sendResult(R_ERROR);
+         }
+         break;
+      }
+      default:
+         sendResult(R_ERROR);
+         break;
+   }
+   return atCmd;
+}
+
+//
 // AT$SB?  query serial speed
 // AT$SB=n set serial speed
 //
@@ -291,15 +374,21 @@ char *doScan(char *atCmd) {
    }
    absolute_time_t deadline = make_timeout_time_ms(15000);
    while( cyw43_wifi_scan_active(&cyw43_state) && !time_reached(deadline) ) {
+#ifndef WOKWI_BUILD
       // Keep the USB CDC alive during the scan wait, otherwise output is
       // frozen for the whole scan (same deadlock class as the ATC1 fix).
       tud_task();
       cdc_task();
+#else
+      sleep_ms(20);
+#endif
    }
    for( int i = 0; i < scanNum; ++i ) {
       printf("%d %s\t%c\r\n", i + 1, scanList[i], scanOpen[i] ? 'O' : 'S');
+#ifndef WOKWI_BUILD
       tud_task();   // drain TX between lines so a long list isn't truncated
       cdc_task();
+#endif
    }
    sendResult(R_OK);
    return atCmd;
@@ -586,12 +675,20 @@ char *doCACert(char *atCmd) {
          // alive (same rationale as the startupWait loop fix).
          ++atCmd;
          static char pem[4096];
-         size_t len = 0, lineBeg = 0;
-         bool done = false;
+         size_t len = 0;            // bytes accumulated in pem (excl. NUL)
+         size_t lineLen = 0;        // chars on the current line (excl. CR/LF)
+         char   firstOnLine = 0;    // first char of the current line
+         bool   done = false, overflow = false;
+         size_t overflowDrain = 0;  // bounds the wait once we stop storing
          ser_puts(ser0, "\r\nSend CA in PEM; end with a line containing only '.'\r\n");
-         while( !done && len < sizeof(pem) - 1 ) {
+         // Read until the lone '.' terminator. On overflow we KEEP draining the
+         // stream (so the leftover PEM is not parsed as AT commands) but stop
+         // storing, and report ERROR instead of a truncated CA with a false OK.
+         while( !done ) {
+#ifndef WOKWI_BUILD
             tud_task();
             cdc_task();
+#endif
             if( !ser_is_readable(ser0) ) {
                continue;
             }
@@ -600,22 +697,36 @@ char *doCACert(char *atCmd) {
                continue;               // segment on LF only
             }
             if( c == '\n' ) {
-               if( len - lineBeg == 1 && pem[lineBeg] == '.' ) {
-                  len = lineBeg;        // drop the terminator line
+               if( lineLen == 1 && firstOnLine == '.' ) {
+                  if( !overflow && len > 0 ) len--;   // drop the lone '.'
                   done = true;
-               } else {
-                  pem[len++] = '\n';    // keep the newline inside the PEM
-                  lineBeg = len;
+               } else if( !overflow ) {
+                  if( len < sizeof(pem) - 1 ) pem[len++] = '\n';   // keep the newline
+                  else overflow = true;
                }
+               lineLen = 0; firstOnLine = 0;
             } else {
-               pem[len++] = c;
+               if( lineLen == 0 ) firstOnLine = c;
+               lineLen++;
+               if( !overflow ) {
+                  if( len < sizeof(pem) - 1 ) pem[len++] = c;
+                  else overflow = true;
+               }
+            }
+            // Safety: don't wait forever for the terminator from a runaway sender.
+            if( overflow && ++overflowDrain > 4 * sizeof(pem) ) {
+               done = true;
             }
          }
          pem[len] = NUL;
-         if( len > 0 && writeCACert(pem, len) ) {
+         if( !overflow && len > 0 && writeCACert(pem, len) ) {
             printf("CA stored: %u bytes\r\n", (unsigned)len);
             sendResult(R_OK);
          } else {
+            if( overflow ) {
+               printf("CA too large (max %u bytes); not stored\r\n",
+                      (unsigned)(sizeof(pem) - 1));
+            }
             sendResult(R_ERROR);
          }
          break;

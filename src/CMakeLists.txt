@@ -28,21 +28,37 @@ project(${PROJECT_NAME})
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+# Wokwi test variant: the simulator provides no USB host, so the modem console
+# is routed to UART0 (ser_uart.c) instead of USB CDC (ser_cdc.c), and the boot
+# skips the USB-ready wait. Enable with -DWOKWI=1. Off => normal USB-CDC build.
+option(WOKWI "Wokwi test variant: UART console instead of USB CDC host" OFF)
+if(WOKWI)
+      set(SER_BACKEND ser_uart.c)
+else()
+      set(SER_BACKEND ser_cdc.c)
+endif()
+
 add_executable(${PROJECT_NAME}
       ${PROJECT_NAME}.cpp
-      #ser_uart.c
-      ser_cdc.c
+      ${SER_BACKEND}
       usb_cdc.c
       lfs.c
       usb_descriptors.c
       littlefs/lfs.c
       littlefs/lfs_util.c
       )
+
+if(WOKWI)
+      target_compile_definitions(${PROJECT_NAME} PRIVATE WOKWI_BUILD=1)
+endif()
+# Clock floor before the SNTP sync: CMake configuration date (see time_support.h).
+string(TIMESTAMP BUILD_EPOCH "%s" UTC)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
       CYW43_HOST_NAME=\"${CYW43_HOST_NAME}\"
       LFS_NO_MALLOC=1
       LFS_NAME_MAX=64
       PICO_FLASH_SIZE_BYTES=2097152
+      BUILD_EPOCH=${BUILD_EPOCH}UL
       MBEDTLS_CONFIG_FILE=\"mbedtls_config.h\"
       #PICO_STDIO_ENABLE_CRLF_SUPPORT
       )
@@ -53,6 +69,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME}
       pico_cyw43_arch_lwip_threadsafe_background
       pico_lwip_mbedtls
+      pico_lwip_sntp
       pico_mbedtls
       pico_stdlib
       hardware_i2c

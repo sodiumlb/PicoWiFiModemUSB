@@ -30,6 +30,11 @@
 
 #define MBEDTLS_ALLOW_PRIVATE_ACCESS
 #define MBEDTLS_HAVE_TIME
+// NB: we do NOT enable MBEDTLS_HAVE_TIME_DATE. Enabling mbedTLS's *internal* date
+// verification during the handshake (with the lazyCaCb trust callback present) froze
+// the modem loop (v0.3.0 experimental). Instead, the date is checked *after* the
+// handshake, on the peer certificate, by certDateInvalid() in tcp_support.h, using
+// the SNTP clock (time_support.h). Simpler, and without touching mbedTLS internals.
 
 #define MBEDTLS_CIPHER_MODE_CBC
 #define MBEDTLS_ECP_DP_SECP256R1_ENABLED
@@ -64,6 +69,11 @@
 #define MBEDTLS_SSL_TLS_C
 #define MBEDTLS_X509_CRT_PARSE_C
 #define MBEDTLS_X509_USE_C
+/* E-lazy (v0.2.1): on-demand trusted-CA lookup via mbedtls_ssl_conf_ca_cb().
+ * Lets us verify the server chain against a multi-CA bundle stored in LittleFS
+ * while keeping only ONE CA parsed in RAM at a time — the RP2040 cannot hold the
+ * full Mozilla store parsed (~200–400 KB). See docs/design-proxy-tls-ssh.md §10. */
+#define MBEDTLS_X509_TRUSTED_CERTIFICATE_CALLBACK
 /* PEM parsing of the user-provided CA (AT$CA=). Without these, mbedtls_x509_crt_parse
  * only accepts DER, so a PEM CA fails to load and certificate verification (AT$CV1)
  * never creates a TLS config (every secure dial returns NO CARRIER). BASE64_C is a
