@@ -135,12 +135,12 @@ char *doTime(char *atCmd) {
       case '?': {
          ++atCmd;
          time_t utc = modemNow();
-         time_t loc = utc + (time_t)tzOffsetMin * 60;   // heure locale (affichage)
+         time_t loc = utc + (time_t)settings.tzOffsetMin * 60;   // heure locale (affichage)
          struct tm tmv;
          gmtime_r(&loc, &tmv);
          char buf[32];
          strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmv);
-         int off = tzOffsetMin;
+         int off = settings.tzOffsetMin;
          printf("%s UTC%+03d:%02d (epoch %lu, %s)\r\n",
                 buf, off / 60, (off < 0 ? -off : off) % 60,
                 (unsigned long)utc, timeSynced ? "synced" : "build-fallback");
@@ -176,8 +176,8 @@ char *doTimeZone(char *atCmd) {
    switch( atCmd[0] ) {
       case '?':
          ++atCmd;
-         printf("UTC%+03d:%02d\r\n", tzOffsetMin / 60,
-                (tzOffsetMin < 0 ? -tzOffsetMin : tzOffsetMin) % 60);
+         printf("UTC%+03d:%02d\r\n", settings.tzOffsetMin / 60,
+                (settings.tzOffsetMin < 0 ? -settings.tzOffsetMin : settings.tzOffsetMin) % 60);
          if( !atCmd[0] ) {
             sendResult(R_OK);
          }
@@ -195,7 +195,7 @@ char *doTimeZone(char *atCmd) {
          int off = sign * (hh * 60 + mm);
          atCmd[0] = NUL;
          if( off >= -14 * 60 && off <= 14 * 60 ) {   // bornes UTC-14..+14
-            tzOffsetMin = off;
+            settings.tzOffsetMin = off;
             sendResult(R_OK);
          } else {
             sendResult(R_ERROR);

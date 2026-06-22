@@ -20,7 +20,7 @@
 static volatile time_t   timeEpochBase = (time_t)BUILD_EPOCH; // epoch à la dernière synchro
 static volatile uint32_t timeBaseMs    = 0;                   // ms-depuis-boot à la synchro
 static volatile bool     timeSynced    = false;              // SNTP/AT$TIME a fixé l'heure ?
-static int               tzOffsetMin   = 0;                   // fuseau : décalage vs UTC (min)
+// Fuseau (décalage vs UTC, minutes) : persistant dans settings.tzOffsetMin (AT$TZ / AT&W).
 
 // Horloge courante (epoch UTC) : base + temps écoulé depuis la base.
 static time_t modemNow(void) {

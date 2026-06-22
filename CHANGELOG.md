@@ -5,6 +5,17 @@ Voir le document de conception : `../docs/design-proxy-tls-ssh.md`.
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] — 2026-06-22 — Fuseau horaire persistant
+
+- **`AT$TZ` désormais persistant** : le décalage est stocké dans `SETTINGS_T.tzOffsetMin`
+  (`types.h`) et sauvegardé par `AT&W` (LittleFS) → conservé au reboot. Remplace la
+  variable RAM volatile de v0.3.0.
+- `MAGIC_NUMBER` 0x5679 → **0x567A** (changement de structure des settings) : au 1er boot
+  après mise à jour, les settings sont **réinitialisés** (`factoryDefaults`) — reconfigurer
+  le WiFi (`AT$SSID=`/`AT$PASS=`/`AT&W`). Le fichier `ca.pem` (bundle CA) n'est pas affecté.
+- `FW_VERSION` **0.3.1**. ✅ Validé sur matériel : `AT$TZ=+2` + `AT&W` + reboot →
+  `AT$TZ?` = `UTC+02:00`, `AT$TIME?` en heure locale.
+
 ## [0.3.0] — 2026-06-22 — Synchro NTP + vérification de date des certificats
 
 **Ajouté**
