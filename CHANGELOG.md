@@ -48,8 +48,11 @@ Mozilla parsé). Conception détaillée : `../docs/design-proxy-tls-ssh.md` §10
 - ✅ Compilation `arm-none-eabi-gcc` 14.2.1 / `cmake --build` OK :
   `wifi_modem.uf2` (~998 Ko), `text` ≈ 487 Ko, `bss` ≈ 130 Ko. Symboles
   `lazyCaCb`/`caBundle*` présents.
-- ⏳ **À valider sur matériel** : bundle multi-CA réel + sites badssl valides/invalides
-  (chaîne acceptée → `CONNECT` / refusée → `NO CARRIER`).
+- ✅ **Validé sur matériel (2026-06-22)** — Pico W réel, bundle multi-CA (Amazon leurre
+  + ISRG Root X1) via `AT$CA=` : `badssl.com` → `CONNECT` (ISRG trouvé après le leurre,
+  scan lazy confirmé), `untrusted-root.badssl.com` (CA absent) → `NO CARRIER`,
+  `expired.badssl.com` → `NO CARRIER`. Correctif `AT$CA=` : PEM > 4096 o → `ERROR` sans
+  troncature, CA préservé. Banc de test : `../validation/` (rapport + `validate.py`).
 
 ## [non publié]
 
