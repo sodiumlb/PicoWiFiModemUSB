@@ -315,6 +315,95 @@ char *httpGet(char *atCmd) {
    return atCmd;
 }
 
+// ATPOSThttp://host[:port][/path]   — POST over plain HTTP
+// ATPOSThttps://host[:port][/path]  — POST over TLS (terminated by the modem)
+//
+// After the command the modem reads: optional request headers, one blank line, then the
+// body — terminated by a line containing only '.'. Content-Length is computed
+// automatically; Host and Connection: close are added. Lets the Oric call REST APIs.
+//
+char *httpPost(char *atCmd) {
+   char *host, *path, *port, *scheme;
+   int portNum;
+   bool secure = false;
+
+   if( (scheme = strstr(atCmd, "https://")) != NULL ) {
+      secure = true; host = scheme + 8; portNum = HTTPS_PORT;
+   } else if( (scheme = strstr(atCmd, "http://")) != NULL ) {
+      host = scheme + 7; portNum = HTTP_PORT;
+   } else {
+      sendResult(R_ERROR); return atCmd;
+   }
+   path = strchr(host, '/'); if( path ) { *path = NUL; ++path; }
+   port = strchr(host, ':'); if( port ) { portNum = atoi(port + 1); *port = NUL; }
+
+   static char hbuf[768];    // custom request headers (each terminated CRLF)
+   static char bbuf[3072];   // request body
+   char   line[512];
+   size_t hlen = 0, blen = 0, ll = 0;
+   bool   inBody = false, overflow = false, done = false;
+
+   ser_puts(ser0, "\r\nSend headers, blank line, then body; end with '.'\r\n");
+   while( !done ) {
+#ifndef WOKWI_BUILD
+      tud_task();
+      cdc_task();
+#endif
+      if( !ser_is_readable(ser0) ) continue;
+      char c = ser_getc(ser0);
+      if( c == '\r' ) continue;            // segment on LF only
+      if( c != '\n' ) {
+         if( ll < sizeof(line) - 1 ) line[ll++] = c; else overflow = true;
+         continue;
+      }
+      line[ll] = NUL;
+      if( ll == 1 && line[0] == '.' ) {           // lone '.' ⇒ end
+         done = true;
+      } else if( !inBody && ll == 0 ) {           // blank line ⇒ body starts
+         inBody = true;
+      } else if( !inBody ) {                       // a header line
+         if( hlen + ll + 2 < sizeof(hbuf) ) {
+            memcpy(hbuf + hlen, line, ll); hlen += ll;
+            hbuf[hlen++] = '\r'; hbuf[hlen++] = '\n';
+         } else overflow = true;
+      } else {                                     // a body line
+         if( blen + ll + 1 < sizeof(bbuf) ) {
+            if( blen ) bbuf[blen++] = '\n';
+            memcpy(bbuf + blen, line, ll); blen += ll;
+         } else overflow = true;
+      }
+      ll = 0;
+   }
+   if( overflow ) { sendResult(R_ERROR); atCmd[0] = NUL; return atCmd; }
+
+   tcpClient = tcpConnect(&tcpClient0, host, portNum, secure);
+   if( !tcpClient ) {
+      sendResult(R_NO_CARRIER);
+      ser_set(DCD, !ACTIVE);
+      atCmd[0] = NUL;
+      return atCmd;
+   }
+   connectTime = millis();
+   dtrWentInactive = false;
+   sendResult(R_CONNECT);
+   ser_set(DCD, ACTIVE);
+   amClient = true;
+   state = ONLINE;
+
+   bytesOut += tcpWriteStr(tcpClient, "POST /");
+   if( path ) bytesOut += tcpWriteStr(tcpClient, path);
+   bytesOut += tcpWriteStr(tcpClient, " HTTP/1.1\r\nHost: ");
+   bytesOut += tcpWriteStr(tcpClient, host);
+   bytesOut += tcpWriteStr(tcpClient, "\r\n");
+   if( hlen ) bytesOut += tcpWriteBuf(tcpClient, (uint8_t *)hbuf, hlen);
+   char clh[48];
+   snprintf(clh, sizeof clh, "Content-Length: %u\r\nConnection: close\r\n\r\n", (unsigned)blen);
+   bytesOut += tcpWriteStr(tcpClient, clh);
+   if( blen ) bytesOut += tcpWriteBuf(tcpClient, (uint8_t *)bbuf, blen);
+   atCmd[0] = NUL;
+   return atCmd;
+}
+
 //
 // ATH go offline (if connected to a host)
 //
