@@ -51,6 +51,7 @@
 #include "wifi_modem.h"
 //#include "eeprom.h"
 #include "lfs.h"
+#include "time_support.h"
 #include "tcp_support.h"
 #include "support.h"
 #include "at_basic.h"
@@ -61,12 +62,17 @@
 void setup(void) {
    bool ok = true;
 
+#ifdef WOKWI_BUILD
+   // Wokwi has no USB host: skip the CDC bring-up and use the UART0 console.
+   stdio_init_all();
+#else
    tud_init(TUD_OPT_RHPORT);
    stdio_init_all();
    cdc_init();
    do{
       tud_task();
    }while(!tud_ready());
+#endif
 
    //gpio_init(DTR);
    //gpio_set_dir(DTR, INPUT);
@@ -107,6 +113,16 @@ void setup(void) {
    }
    sessionTelnetType = settings.telnet;
 
+#ifdef WOKWI_BUILD
+   // No NVRAM and no AT input channel in the sim: preconfigure for the virtual
+   // "Wokwi-GUEST" open network and a 115200 UART console (Wokwi default).
+   strncpy(settings.ssid, "Wokwi-GUEST", MAX_SSID_LEN);
+   settings.ssid[MAX_SSID_LEN] = '\0';
+   settings.wifiPassword[0] = '\0';
+   settings.serialSpeed = 115200;
+   printf("\r\nWOKWI variant: SSID=%s baud=%lu\r\n", settings.ssid, settings.serialSpeed);
+#endif
+
    ser_set_baudrate(ser0, settings.serialSpeed);
    ser_set_format(ser0, settings.dataBits, settings.stopBits, (ser_parity_t)settings.parity);
    ser_set_translate_crlf(ser0, false);
@@ -117,10 +133,12 @@ void setup(void) {
 
    if( settings.startupWait ) {
       while( true ) {            // wait for a CR
+#ifndef WOKWI_BUILD
          // Keep the USB stack alive while waiting, otherwise the CDC endpoint
          // is never serviced and the CR can never be received (deadlock).
          tud_task();
          cdc_task();
+#endif
          if( ser_is_readable(ser0) ) {
             if( ser_getc(ser0) == CR ) {
                break;
@@ -137,7 +155,7 @@ void setup(void) {
    // arrival of serial data
    cyw43_wifi_pm(&cyw43_state, CYW43_DEFAULT_PM & ~0xf);
    if( settings.ssid[0] ) {
-      // Empty password => open network (no auth); otherwise WPA2.
+      // Empty password ⇒ open network (no auth); otherwise WPA2.
       uint32_t authMode = settings.wifiPassword[0] ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN;
       for( int i = 0; i < 4; ++i ) {
          cyw43_arch_wifi_connect_timeout_ms(settings.ssid, settings.wifiPassword, authMode, 10000);
@@ -145,6 +163,11 @@ void setup(void) {
             break;
          }
       }
+#ifdef WOKWI_BUILD
+      printf("WOKWI variant: WiFi link status = %d (%s)\r\n",
+             cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA),
+             cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ? "UP" : "not up");
+#endif
    }
 
    if( settings.listenPort ) {
@@ -161,6 +184,7 @@ void setup(void) {
       if( cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP ) {
          ser_set(DSR, ACTIVE);  // modem is finally ready or SSID not configured
          dns_init();
+         startSntp();           // sync time once (stopped afterwards, see loop)
       }
       if( settings.autoExecute[0] ) {
          strncpy(atCmd, settings.autoExecute, MAX_CMD_LEN);
@@ -190,8 +214,12 @@ void tud_umount_cb(void) {
 // =============================================================
 void loop(void) {
 
+#ifndef WOKWI_BUILD
    tud_task();
    cdc_task();
+#endif
+
+   maybeStopSntp();   // stop SNTP on first sync (avoids handshake hang)
 
    checkForIncomingCall();
 
@@ -309,6 +337,12 @@ void doAtCmds(char *atCmd) {
                } else if( !strncasecmp(atCmd, "$PASS", 5) ) {
                   // query/set WiFi password
                   atCmd = doWiFiPassword(atCmd + 5);
+               } else if( !strncasecmp(atCmd, "$TIME", 5) ) {
+                  // query/set system time (UTC epoch) for cert date verification
+                  atCmd = doTime(atCmd + 5);
+               } else if( !strncasecmp(atCmd, "$TZ", 3) ) {
+                  // query/set timezone offset (display only)
+                  atCmd = doTimeZone(atCmd + 3);
                } else if( !strncasecmp(atCmd, "C", 1) ) {
                   // connect/disconnect to WiFi
                   atCmd = wifiConnection(atCmd + 1);

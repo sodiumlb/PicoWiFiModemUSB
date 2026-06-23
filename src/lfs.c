@@ -43,8 +43,7 @@ static int lfs_prog(const struct lfs_config *c, lfs_block_t block,
                           off;
     // Disable interrupts during the flash op: while flash is being programmed
     // XIP is unavailable, so any ISR executing from flash (e.g. the cyw43
-    // background WiFi IRQ under pico_cyw43_arch_lwip_threadsafe_background)
-    // would hard-fault and hang the chip. Symptom: AT&W froze the modem.
+    // background WiFi IRQ) would hang the chip. See AT&W deadlock.
     uint32_t ints = save_and_disable_interrupts();
     flash_range_program(flash_offs, (const uint8_t*)buffer, size);
     restore_interrupts(ints);
@@ -181,4 +180,35 @@ int caCertSize(void) {
    if( lfs_stat(&lfs_volume, ca_fname, &info) == LFS_ERR_OK )
       return (int)info.size;
    return 0;
+}
+
+// ── Streaming cursor over the CA bundle (E-lazy) ──
+// Forward-only reader letting the TLS layer scan a multi-certificate PEM bundle
+// one block at a time, without ever holding the whole store in RAM. Not
+// reentrant by design: a single TLS session runs at a time, and no flash write
+// happens during a handshake read, so the shared cursor is safe here.
+static lfs_file_t ca_iter;
+static uint8_t    ca_iter_buf[FLASH_PAGE_SIZE];
+static bool       ca_iter_open = false;
+
+bool caBundleOpen(void) {
+   struct lfs_file_config fc = { .buffer = ca_iter_buf };
+   if( ca_iter_open ) return false;
+   if( lfs_file_opencfg(&lfs_volume, &ca_iter, ca_fname, LFS_O_RDONLY, &fc) != LFS_ERR_OK )
+      return false;
+   ca_iter_open = true;
+   return true;
+}
+
+// Read up to n bytes sequentially. Returns the byte count (0 at EOF) or -1.
+int caBundleRead(void *buf, size_t n) {
+   if( !ca_iter_open ) return -1;
+   return (int)lfs_file_read(&lfs_volume, &ca_iter, buf, n);
+}
+
+void caBundleClose(void) {
+   if( ca_iter_open ) {
+      lfs_file_close(&lfs_volume, &ca_iter);
+      ca_iter_open = false;
+   }
 }

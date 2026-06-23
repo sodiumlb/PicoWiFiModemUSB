@@ -1,6 +1,14 @@
 #ifndef _MODEM_H
    #define _MODEM_H
 
+   // TLS-proxy fork version (see ../CHANGELOG.md). 0.2.1: E-lazy on-demand CA
+   // verification (multi-CA bundle, ~1 cert in RAM). 0.2.2: fix the lazy scan so
+   // an oversized cert is skipped (not aborting the scan) — needed for real
+   // bundles with RSA-4096 roots; CA_LAZY_PEM_MAX 2560→3072. 0.3.0: SNTP time sync
+   // + mbedTLS date verification (notBefore/notAfter); AT$TIME command. 0.3.1:
+   // AT$TZ timezone offset now persisted in settings (AT&W); MAGIC_NUMBER bumped.
+   #define FW_VERSION            "0.3.1"
+
    #define DEBUG                 0
    #define DEFAULT_SPEED         9600
 
@@ -10,7 +18,7 @@
    #define ESC_CHAR              '+'
    #define ESC_COUNT             3
    #define GUARD_TIME            1000
-   #define MAGIC_NUMBER          0x5679
+   #define MAGIC_NUMBER          0x567A   // bump: ajout de tzOffsetMin (v0.3.1)
    #define MAX_SSID_LEN          32
    #define MAX_WIFI_PWD_LEN      64
    #define DEFAULT_LISTEN_PORT   6400

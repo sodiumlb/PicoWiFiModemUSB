@@ -33,6 +33,7 @@ char *factoryDefaults(char *atCmd) {
    settings.quiet = false;
    settings.dtrHandling = DTR_IGNORE;
    settings.tlsVerify = false;   // insecure by default; enable with AT$CV1 once a CA is stored
+   settings.tzOffsetMin = 0;     // UTC by default (AT$TZ to set a local offset)
 
    strcpy(settings.alias[0], "particles");
    strcpy(settings.speedDial[0], "+particlesbbs.dyndns.org:6400");

@@ -39,6 +39,7 @@
       bool          quiet;
       DtrStates     dtrHandling;
       bool          tlsVerify;     // verify the server certificate against the stored CA
+      int16_t       tzOffsetMin;   // timezone offset vs UTC, minutes (display only, AT$TZ)
    } SETTINGS_T;
    
    typedef struct TCP_CLIENT_T_ {

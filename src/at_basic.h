@@ -48,21 +48,25 @@ char *wifiConnection(char *atCmd) {
       case '1':
          ++atCmd;
          if( settings.ssid[0] ) {
-            // Empty password => open network (no auth); otherwise WPA2.
+            // Empty password ⇒ open network (no auth); otherwise WPA2.
             uint32_t authMode = settings.wifiPassword[0] ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN;
             if( !settings.quiet && settings.extendedCodes ) {
                printf("CONNECTING TO SSID %s", settings.ssid);
             }
             cyw43_arch_wifi_connect_async(settings.ssid, settings.wifiPassword, authMode);
             for( int i = 0; i < 50; ++i ) {
-               // Pump the USB stack during the 500 ms wait, otherwise the CDC
-               // is frozen for the whole connection attempt (up to 25 s) —
-               // same deadlock class as the startupWait loop.
+#ifndef WOKWI_BUILD
+               // Pump the USB stack during the 500 ms wait, otherwise the CDC is
+               // frozen for the whole connection attempt (up to 25 s) — same
+               // deadlock class as the startupWait loop fix.
                absolute_time_t until = make_timeout_time_ms(500);
                while( !time_reached(until) ) {
                   tud_task();
                   cdc_task();
                }
+#else
+               sleep_ms(500);
+#endif
                if( !settings.quiet && settings.extendedCodes ) {
                   ser_putc(ser0, '.');
                }
@@ -78,6 +82,7 @@ char *wifiConnection(char *atCmd) {
             } else {
                ser_set(DSR, ACTIVE);  // modem is ready
                dns_init();
+               startSntp();           // sync time once (stopped afterwards, see loop)
                if( !settings.quiet && settings.extendedCodes ) {
                   printf("CONNECTED TO %s IP ADDRESS: %s\r\n",
                      settings.ssid, ip4addr_ntoa(netif_ip4_addr(&cyw43_state.netif[0])));
@@ -430,7 +435,7 @@ char *showNetworkInfo(char *atCmd) {
 
    do {      // a Q&D hack to allow ^C to terminate the output at the
              // end of a page
-      if( PagedOut("Pico WiFi modem", true) ) break;
+      if( PagedOut("Pico WiFi modem v" FW_VERSION, true) ) break;
       if( PagedOut("Build......: " __DATE__ " " __TIME__) ) break;
       snprintf(infoLine, sizeof infoLine, "Baud.......: %lu", settings.serialSpeed);
       if( PagedOut(infoLine) ) break;
